@@ -22,7 +22,7 @@ ESECUZIONE = {
 
 # ============================================================== missione e spinta
 MISSIONE = {
-    "massa_cubo_kg": 6.06,          # [COMP] 4,15 kg componenti + 0,90 kg ruote, margine 20 % (conversazione)
+    "massa_cubo_kg": 5,          # [COMP] 4,15 kg componenti + 0,90 kg ruote, margine 20 % (conversazione)
     "disturbo_residuo_g": 0.01,     # [EUG] ±0,01 g sugli assi laterali [XLS]
     "distanza_traslazione_m": 0.3,  # [XLS] SEGNAPOSTO
     "tempo_traslazione_s": 3.0,     # [XLS] SEGNAPOSTO, dentro la finestra di 5 s
