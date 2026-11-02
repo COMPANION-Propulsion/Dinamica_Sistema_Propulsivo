@@ -1,0 +1,354 @@
+Esecuzione: /home/claude/companion_condotti/output/20261101-093535_F1.68N-L320-volo-20C-6scenari_74b2e1f2
+Spinta richiesta per asse: 1.683 N (k_m · m · (n g + 4 d / t²), come in Propulsione_dimensionamento.xlsx)
+Ambiente di progetto: volo_20C  rho = 0.9804 kg/m³
+
+== S1_SFALSATI_12: 12 condotti dritti sfalsati (modello interattivo)
+   D =   26 mm : spinta non raggiunta
+   D =   30 mm : spinta non raggiunta
+   D =   34 mm : punteggio 0.679
+   D =   38 mm : punteggio 0.683
+   D =   42 mm : punteggio 0.668
+   D =   46 mm : punteggio 0.560 con violazioni
+   D =   50 mm : punteggio 0.556 con violazioni
+   D =   55 mm : non ammissibile (geometria)
+   D =   60 mm : non ammissibile (geometria)
+   -> ottimo: D = 38 mm    [8 s]
+
+== S2_SPIGOLI_CORTI_12: 12 condotti corti sugli spigoli, presa a metà spigolo
+   D =   26 mm : spinta non raggiunta
+   D =   30 mm : spinta non raggiunta
+   D =   34 mm : punteggio 0.648
+   D =   38 mm : punteggio 0.649
+   D =   42 mm : punteggio 0.658
+   D =   46 mm : punteggio 0.654
+   D =   50 mm : punteggio 0.648
+   D =   55 mm : punteggio 0.516 con violazioni
+   D =   60 mm : non ammissibile (geometria)
+   -> ottimo: D = 42 mm    [12 s]
+
+== S3_SPIGOLI_PIENI_12: 12 condotti sugli spigoli per tutta la lunghezza, scalino ai vertici
+   D =   26 mm : spinta non raggiunta
+   D =   30 mm : spinta non raggiunta
+   D =   34 mm : punteggio 0.569
+   D =   38 mm : non ammissibile (geometria)
+   D =   42 mm : non ammissibile (geometria)
+   D =   46 mm : non ammissibile (geometria)
+   D =   50 mm : non ammissibile (geometria)
+   D =   55 mm : non ammissibile (geometria)
+   D =   60 mm : non ammissibile (geometria)
+   -> ottimo: D = 34 mm    [3 s]
+
+== S4_Y6_MARGINI: 6 ventole con condotto a Y, ugelli ai margini opposti (dal file Excel)
+   D =   26 mm (forma spaziale, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   30 mm (forma spaziale, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   26 mm (forma spaziale, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   30 mm (forma spaziale, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   26 mm (forma spaziale, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   30 mm (forma spaziale, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   26 mm (forma spaziale, raggio 0.6, profondita 0.35): non ammissibile (geometria)
+   D =   30 mm (forma spaziale, raggio 0.6, profondita 0.35): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, raggio 0.6, profondita 0.35): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, raggio 0.6, profondita 0.35): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, raggio 0.6, profondita 0.35): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, raggio 0.6, profondita 0.35): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, raggio 0.6, profondita 0.35): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, raggio 0.6, profondita 0.35): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, raggio 0.6, profondita 0.35): non ammissibile (geometria)
+   D =   26 mm (forma spaziale, raggio 0.6, profondita 0.5): non ammissibile (geometria)
+   D =   30 mm (forma spaziale, raggio 0.6, profondita 0.5): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, raggio 0.6, profondita 0.5): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, raggio 0.6, profondita 0.5): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, raggio 0.6, profondita 0.5): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, raggio 0.6, profondita 0.5): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, raggio 0.6, profondita 0.5): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, raggio 0.6, profondita 0.5): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, raggio 0.6, profondita 0.5): non ammissibile (geometria)
+   D =   26 mm (forma spaziale, raggio 0.6, profondita 0.65): non ammissibile (geometria)
+   D =   30 mm (forma spaziale, raggio 0.6, profondita 0.65): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, raggio 0.6, profondita 0.65): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, raggio 0.6, profondita 0.65): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, raggio 0.6, profondita 0.65): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, raggio 0.6, profondita 0.65): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, raggio 0.6, profondita 0.65): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, raggio 0.6, profondita 0.65): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, raggio 0.6, profondita 0.65): non ammissibile (geometria)
+   D =   26 mm (forma spaziale, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   30 mm (forma spaziale, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   26 mm (forma spaziale, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   30 mm (forma spaziale, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   26 mm (forma spaziale, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   30 mm (forma spaziale, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   26 mm (forma piatta, profondita 0.35): spinta non raggiunta
+   D =   30 mm (forma piatta, profondita 0.35): non ammissibile (geometria)
+   D =   34 mm (forma piatta, profondita 0.35): non ammissibile (geometria)
+   D =   38 mm (forma piatta, profondita 0.35): non ammissibile (geometria)
+   D =   42 mm (forma piatta, profondita 0.35): non ammissibile (geometria)
+   D =   46 mm (forma piatta, profondita 0.35): non ammissibile (geometria)
+   D =   50 mm (forma piatta, profondita 0.35): non ammissibile (geometria)
+   D =   55 mm (forma piatta, profondita 0.35): non ammissibile (geometria)
+   D =   60 mm (forma piatta, profondita 0.35): non ammissibile (geometria)
+   D =   26 mm (forma piatta, profondita 0.5): spinta non raggiunta
+   D =   30 mm (forma piatta, profondita 0.5): non ammissibile (geometria)
+   D =   34 mm (forma piatta, profondita 0.5): non ammissibile (geometria)
+   D =   38 mm (forma piatta, profondita 0.5): non ammissibile (geometria)
+   D =   42 mm (forma piatta, profondita 0.5): non ammissibile (geometria)
+   D =   46 mm (forma piatta, profondita 0.5): non ammissibile (geometria)
+   D =   50 mm (forma piatta, profondita 0.5): non ammissibile (geometria)
+   D =   55 mm (forma piatta, profondita 0.5): non ammissibile (geometria)
+   D =   60 mm (forma piatta, profondita 0.5): non ammissibile (geometria)
+   D =   26 mm (forma piatta, profondita 0.65): non ammissibile (geometria)
+   D =   30 mm (forma piatta, profondita 0.65): non ammissibile (geometria)
+   D =   34 mm (forma piatta, profondita 0.65): non ammissibile (geometria)
+   D =   38 mm (forma piatta, profondita 0.65): non ammissibile (geometria)
+   D =   42 mm (forma piatta, profondita 0.65): non ammissibile (geometria)
+   D =   46 mm (forma piatta, profondita 0.65): non ammissibile (geometria)
+   D =   50 mm (forma piatta, profondita 0.65): non ammissibile (geometria)
+   D =   55 mm (forma piatta, profondita 0.65): non ammissibile (geometria)
+   D =   60 mm (forma piatta, profondita 0.65): non ammissibile (geometria)
+   -> ottimo: D = 38 mm (forma piatta, profondita 0.5)  (NON AMMISSIBILE)   [28 s]
+
+== S5_REVERSIBILI_6: 6 ventole reversibili a coppie sfalsate (dal file Excel)
+   D =   26 mm : spinta non raggiunta
+   D =   30 mm : spinta non raggiunta
+   D =   34 mm : spinta non raggiunta
+   D =   38 mm : spinta non raggiunta
+   D =   42 mm : punteggio 0.618
+   D =   46 mm : punteggio 0.645
+   D =   50 mm : punteggio 0.647
+   D =   55 mm : non ammissibile (geometria)
+   D =   60 mm : non ammissibile (geometria)
+   -> ottimo: D = 50 mm    [4 s]
+
+== S6_Y6_DIAGONALI: 6 ventole con condotto a Y, ugelli negli angoli opposti
+   D =   26 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   30 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   26 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   30 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   26 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   30 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   26 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   30 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   26 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   30 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   26 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   30 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, margine 4.0, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   26 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   30 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.35): non ammissibile (geometria)
+   D =   26 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   30 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.5): non ammissibile (geometria)
+   D =   26 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   30 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, margine 35.0, raggio 0.45, profondita 0.65): non ammissibile (geometria)
+   D =   26 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.35): spinta non raggiunta
+   D =   30 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.35): spinta non raggiunta
+   D =   34 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.35): spinta non raggiunta
+   D =   38 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.35): non ammissibile (geometria)
+   D =   26 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.5): spinta non raggiunta
+   D =   30 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.5): non ammissibile (geometria)
+   D =   26 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   30 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   34 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   38 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   42 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   46 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   50 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   55 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   60 mm (forma spaziale, margine 35.0, raggio 0.75, profondita 0.65): non ammissibile (geometria)
+   D =   26 mm (forma piatta, margine 4.0, profondita 0.35): non ammissibile (geometria)
+   D =   30 mm (forma piatta, margine 4.0, profondita 0.35): non ammissibile (geometria)
+   D =   34 mm (forma piatta, margine 4.0, profondita 0.35): non ammissibile (geometria)
+   D =   38 mm (forma piatta, margine 4.0, profondita 0.35): non ammissibile (geometria)
+   D =   42 mm (forma piatta, margine 4.0, profondita 0.35): non ammissibile (geometria)
+   D =   46 mm (forma piatta, margine 4.0, profondita 0.35): non ammissibile (geometria)
+   D =   50 mm (forma piatta, margine 4.0, profondita 0.35): non ammissibile (geometria)
+   D =   55 mm (forma piatta, margine 4.0, profondita 0.35): non ammissibile (geometria)
+   D =   60 mm (forma piatta, margine 4.0, profondita 0.35): non ammissibile (geometria)
+   D =   26 mm (forma piatta, margine 4.0, profondita 0.5): non ammissibile (geometria)
+   D =   30 mm (forma piatta, margine 4.0, profondita 0.5): non ammissibile (geometria)
+   D =   34 mm (forma piatta, margine 4.0, profondita 0.5): non ammissibile (geometria)
+   D =   38 mm (forma piatta, margine 4.0, profondita 0.5): non ammissibile (geometria)
+   D =   42 mm (forma piatta, margine 4.0, profondita 0.5): non ammissibile (geometria)
+   D =   46 mm (forma piatta, margine 4.0, profondita 0.5): non ammissibile (geometria)
+   D =   50 mm (forma piatta, margine 4.0, profondita 0.5): non ammissibile (geometria)
+   D =   55 mm (forma piatta, margine 4.0, profondita 0.5): non ammissibile (geometria)
+   D =   60 mm (forma piatta, margine 4.0, profondita 0.5): non ammissibile (geometria)
+   D =   26 mm (forma piatta, margine 4.0, profondita 0.65): non ammissibile (geometria)
+   D =   30 mm (forma piatta, margine 4.0, profondita 0.65): non ammissibile (geometria)
+   D =   34 mm (forma piatta, margine 4.0, profondita 0.65): non ammissibile (geometria)
+   D =   38 mm (forma piatta, margine 4.0, profondita 0.65): non ammissibile (geometria)
+   D =   42 mm (forma piatta, margine 4.0, profondita 0.65): non ammissibile (geometria)
+   D =   46 mm (forma piatta, margine 4.0, profondita 0.65): non ammissibile (geometria)
+   D =   50 mm (forma piatta, margine 4.0, profondita 0.65): non ammissibile (geometria)
+   D =   55 mm (forma piatta, margine 4.0, profondita 0.65): non ammissibile (geometria)
+   D =   60 mm (forma piatta, margine 4.0, profondita 0.65): non ammissibile (geometria)
+   D =   26 mm (forma piatta, margine 35.0, profondita 0.35): non ammissibile (geometria)
+   D =   30 mm (forma piatta, margine 35.0, profondita 0.35): non ammissibile (geometria)
+   D =   34 mm (forma piatta, margine 35.0, profondita 0.35): non ammissibile (geometria)
+   D =   38 mm (forma piatta, margine 35.0, profondita 0.35): non ammissibile (geometria)
+   D =   42 mm (forma piatta, margine 35.0, profondita 0.35): non ammissibile (geometria)
+   D =   46 mm (forma piatta, margine 35.0, profondita 0.35): non ammissibile (geometria)
+   D =   50 mm (forma piatta, margine 35.0, profondita 0.35): non ammissibile (geometria)
+   D =   55 mm (forma piatta, margine 35.0, profondita 0.35): non ammissibile (geometria)
+   D =   60 mm (forma piatta, margine 35.0, profondita 0.35): non ammissibile (geometria)
+   D =   26 mm (forma piatta, margine 35.0, profondita 0.5): non ammissibile (geometria)
+   D =   30 mm (forma piatta, margine 35.0, profondita 0.5): non ammissibile (geometria)
+   D =   34 mm (forma piatta, margine 35.0, profondita 0.5): non ammissibile (geometria)
+   D =   38 mm (forma piatta, margine 35.0, profondita 0.5): non ammissibile (geometria)
+   D =   42 mm (forma piatta, margine 35.0, profondita 0.5): non ammissibile (geometria)
+   D =   46 mm (forma piatta, margine 35.0, profondita 0.5): non ammissibile (geometria)
+   D =   50 mm (forma piatta, margine 35.0, profondita 0.5): non ammissibile (geometria)
+   D =   55 mm (forma piatta, margine 35.0, profondita 0.5): non ammissibile (geometria)
+   D =   60 mm (forma piatta, margine 35.0, profondita 0.5): non ammissibile (geometria)
+   D =   26 mm (forma piatta, margine 35.0, profondita 0.65): non ammissibile (geometria)
+   D =   30 mm (forma piatta, margine 35.0, profondita 0.65): non ammissibile (geometria)
+   D =   34 mm (forma piatta, margine 35.0, profondita 0.65): non ammissibile (geometria)
+   D =   38 mm (forma piatta, margine 35.0, profondita 0.65): non ammissibile (geometria)
+   D =   42 mm (forma piatta, margine 35.0, profondita 0.65): non ammissibile (geometria)
+   D =   46 mm (forma piatta, margine 35.0, profondita 0.65): non ammissibile (geometria)
+   D =   50 mm (forma piatta, margine 35.0, profondita 0.65): non ammissibile (geometria)
+   D =   55 mm (forma piatta, margine 35.0, profondita 0.65): non ammissibile (geometria)
+   D =   60 mm (forma piatta, margine 35.0, profondita 0.65): non ammissibile (geometria)
+   -> ottimo: D = 38 mm (forma spaziale, margine 4.0, raggio 0.45, profondita 0.65)  (NON AMMISSIBILE)   [90 s]
+
+Grafici per scenario...
+Grafici di confronto...
+Excel di confronto...
+
+RIEPILOGO
+  S1_SFALSATI_12         punteggio 0.683  D 38 mm    130 W/asse  libero 65%  ammissibile
+                           avviso: con 3 assi a piena spinta servono 16.2 A (pacco 15 A): ammessi 2 assi pieni insieme
+                           avviso: il condotto attraversa una risonanza durante l'accelerazione della ventola
+  S2_SPIGOLI_CORTI_12    punteggio 0.658  D 42 mm    158 W/asse  libero 69%  ammissibile
+                           avviso: con 3 assi a piena spinta servono 18.6 A (pacco 15 A): ammessi 2 assi pieni insieme
+                           avviso: il condotto attraversa una risonanza durante l'accelerazione della ventola
+  S5_REVERSIBILI_6       punteggio 0.647  D 50 mm    162 W/asse  libero 68%  ammissibile
+                           avviso: con 3 assi a piena spinta servono 20.3 A (pacco 15 A): ammessi 2 assi pieni insieme
+                           avviso: il condotto attraversa una risonanza durante l'accelerazione della ventola
+  S3_SPIGOLI_PIENI_12    punteggio 0.569  D 34 mm    182 W/asse  libero 67%  ammissibile
+                           avviso: con 3 assi a piena spinta servono 22.8 A (pacco 15 A): ammessi 1 assi pieni insieme
+                           avviso: il condotto attraversa una risonanza durante l'accelerazione della ventola
+  S6_Y6_DIAGONALI        punteggio 0.296  D 38 mm    222 W/asse  libero 72%  NON ammissibile: condotti che si intersecano (-29.3 mm); componenti che non entrano: batteria NiMH 24 V (sportellino), ruote di reazione (3 x Ø100 x 30), blocco avionica; motore oltre tensione o corrente
+                           avviso: con 3 assi a piena spinta servono 27.7 A (pacco 15 A): ammessi 1 assi pieni insieme
+                           avviso: il condotto attraversa una risonanza durante l'accelerazione della ventola
+  S4_Y6_MARGINI          punteggio 0.294  D 38 mm    251 W/asse  libero 73%  NON ammissibile: condotti che si intersecano (-34.8 mm); componenti che non entrano: batteria NiMH 24 V (sportellino), ruote di reazione (3 x Ø100 x 30), blocco avionica; motore oltre tensione o corrente
+                           avviso: con 3 assi a piena spinta servono 31.4 A (pacco 15 A): ammessi 1 assi pieni insieme
+                           avviso: il condotto attraversa una risonanza durante l'accelerazione della ventola
+
+Vincitore tra gli ammissibili: S1_SFALSATI_12
+Finito in 164 s. Risultati in /home/claude/companion_condotti/output/20261101-093535_F1.68N-L320-volo-20C-6scenari_74b2e1f2

@@ -1,0 +1,138 @@
+"""Ricerca del progetto ottimo per ogni scenario.
+
+Due livelli:
+  esterno  geometria: varianti dello scenario x diametro del condotto D
+           (lo spazio interno dipende solo da questi);
+  interno  elementi: rapporto d'area dell'ugello sigma x tipo di ventola x
+           motore.  Si sceglie la combinazione ammissibile (tensione,
+           corrente, Mach) che dà la minima potenza elettrica per asse alla
+           spinta richiesta: a parità di geometria è il criterio fisico giusto,
+           perché spazio e realizzabilità non cambiano.
+Poi il progetto (geometria + elementi) riceve la valutazione completa e il
+punteggio pesato; l'ottimo dello scenario è il migliore tra gli ammissibili.
+Se nessun progetto è ammissibile si riporta il meno peggio con l'elenco
+delle violazioni, così si vede che cosa cambiare.
+"""
+import itertools
+import math
+import time
+
+from . import valutazione as V
+from .scenari import genera_layout
+from .ventole import libreria_ventole, libreria_motori
+
+
+def varianti(sc):
+    vg = sc.get("varianti_geometria")
+    if not vg:
+        return [{}]
+    chiavi = list(vg.keys())
+    out, visti = [], set()
+    for comb in itertools.product(*[vg[k] for k in chiavi]):
+        v = dict(zip(chiavi, comb))
+        if v.get("forma_y") == "piatta" and "raggio_giunzione_frazione" in v:
+            v.pop("raggio_giunzione_frazione")      # nella Y piatta la giunzione sta sull'asse
+        chiave = tuple(sorted(v.items()))
+        if chiave not in visti:
+            visti.add(chiave)
+            out.append(v)
+    return out
+
+
+def migliori_elementi(gm, sc, cfg, tipi, motori, sigmas, log=None):
+    """Combinazione sigma / ventola / motore a minima potenza per asse."""
+    D = gm["D"]
+    sc2 = dict(sc, **gm["variante"])
+    best = None
+    for sigma in sigmas:
+        if sc.get("reversibile") and sigma != 1.0:
+            continue                         # condotto simmetrico: niente Venturi
+        lay_a = genera_layout(sc2, D, sigma, cfg, gm["layout"].parametri.get("segni_giunzione"))
+        for tipo in tipi.values():
+            for mot in motori.values():
+                if (mot.diametro_mm + 2 * cfg["elementi"]["spessore_mozzo_mm"]) / D > 0.7:
+                    continue
+                try:
+                    a = V.valuta_aero(lay_a, cfg, D, sigma, tipo, mot, completo=False)
+                except Exception as exc:          # combinazione fuori campo: si scarta
+                    if log:
+                        log(f"      scartata {tipo.nome}/{mot.nome}/sigma={sigma}: {exc}")
+                    continue
+                if a is None:
+                    continue
+                ok = a["ok_motore"] and a["ok_mach"]
+                chiave = (0 if ok else 1, a["P_asse_max"])
+                if best is None or chiave < best[0]:
+                    best = (chiave, sigma, tipo, mot, lay_a)
+    return best
+
+
+def ottimizza_scenario(sc, cfg, log=print):
+    t0 = time.time()
+    tipi = libreria_ventole(cfg["tipi_ventola"])
+    motori = libreria_motori(cfg["motori"])
+    ott = cfg["ottimizzazione"]
+    progetti, geometrie = [], []
+    for var in varianti(sc):
+        for D in ott["diametri_mm"]:
+            gm = V.valuta_geometria(sc, float(D), cfg, var)
+            amm = V.geometria_ammissibile(gm)
+            geometrie.append(gm)
+            rec = {"scenario": sc["id"], "D": float(D), "variante": var, "geometria": gm,
+                   "geometria_ammissibile": amm, "completo": None}
+            if amm:
+                best = migliori_elementi(gm, sc, cfg, tipi, motori, ott["sigma"])
+                if best is not None:
+                    _, sigma, tipo, mot, lay_a = best
+                    aero = V.valuta_aero(lay_a, cfg, float(D), sigma, tipo, mot, completo=True)
+                    if aero is not None:
+                        rec["aero"] = aero
+                        rec["completo"] = V.valuta_completo(gm, aero, cfg, sc, tipo, mot, sigma)
+                        rec["layout_aero"] = lay_a
+            progetti.append(rec)
+            c = rec["completo"]
+            stato = ("non ammissibile (geometria)" if not amm else
+                     "spinta non raggiunta" if c is None else
+                     f"punteggio {c['punteggio_totale']:.3f}" + ("" if c["ammissibile"] else " con violazioni"))
+            log(f"   D = {D:>4} mm {_txt_var(var)}: {stato}")
+    validi = [p for p in progetti if p["completo"] and p["completo"]["ammissibile"]]
+    if validi:
+        ottimo = max(validi, key=lambda p: p["completo"]["punteggio_totale"])
+    else:
+        ottimo = _meno_peggio(progetti, sc, cfg, tipi, motori, log)
+    log(f"   -> ottimo: D = {ottimo['D']:.0f} mm {_txt_var(ottimo['variante'])}"
+        f"{'' if ottimo['completo'] and ottimo['completo']['ammissibile'] else '  (NON AMMISSIBILE)'}"
+        f"   [{time.time() - t0:.0f} s]")
+    return {"scenario": sc, "progetti": progetti, "ottimo": ottimo}
+
+
+def _meno_peggio(progetti, sc, cfg, tipi, motori, log):
+    """Nessun progetto ammissibile: valuta comunque la geometria meno critica."""
+    con_c = [p for p in progetti if p["completo"]]
+    if con_c:
+        return min(con_c, key=lambda p: (len(p["completo"]["violazioni"]), -p["completo"]["punteggio_totale"]))
+    def gravita(p):
+        g = p["geometria"]
+        return (g["irrealizzabile"], len(g["sovrapposizioni_zone_cm3"]) + len(g["bocche_in_zone_centrali"]),
+                -g["gioco_min_mm"])
+    for p in sorted(progetti, key=gravita):
+        if not p["geometria"]["componenti_valutati"]:      # ricalcola con i componenti per il rapporto
+            p["geometria"] = V.valuta_geometria(sc, p["D"], cfg, p["variante"], colloca_componenti=True)
+        best = migliori_elementi(p["geometria"], sc, cfg, tipi, motori, cfg["ottimizzazione"]["sigma"])
+        if best is None:
+            continue
+        _, sigma, tipo, mot, lay_a = best
+        aero = V.valuta_aero(lay_a, cfg, p["D"], sigma, tipo, mot, completo=True)
+        if aero is None:
+            continue
+        p["aero"] = aero
+        p["completo"] = V.valuta_completo(p["geometria"], aero, cfg, sc, tipo, mot, sigma)
+        p["layout_aero"] = lay_a
+        return p
+    return sorted(progetti, key=gravita)[0]
+
+
+def _txt_var(var):
+    if not var:
+        return ""
+    return "(" + ", ".join(f"{k.split('_')[0]} {v}" for k, v in var.items()) + ")"
