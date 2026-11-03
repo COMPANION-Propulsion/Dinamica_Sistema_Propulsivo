@@ -102,6 +102,15 @@ def grafici_scenario(r, cfg, cartella, formati, log):
     return out
 
 
+def _condotto(layout):
+    """Lunghezza e spostamento reali del condotto (mm), se la geometria ha questi parametri."""
+    par = layout.parametri
+    if "lunghezza_condotto_mm" not in par:
+        return None
+    return (f"lunghezza {par['lunghezza_condotto_mm']:.0f} mm, spostamento lungo lo spigolo "
+            f"{par['spostamento_mm']:+.1f} mm (limite estremità {par['estremita_max_mm']:.0f} mm)")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--input", default=os.path.join(QUI, "INPUT.py"), help="file di input (predefinito: INPUT.py)")
@@ -194,7 +203,8 @@ def main():
                          "massa_totale_kg": c["massa_totale_kg"] if c else None,
                          "massa_voci_kg": c["massa"]["voci"] if c else None,
                          "tipo_ventola": c["tipo_ventola"] if c else None, "motore": c["motore"] if c else None,
-                         "sigma": c["sigma"] if c else None})
+                         "sigma": c["sigma"] if c else None,
+                         "condotto": _condotto(o["geometria"]["layout"])})
     with open(os.path.join(cart, "dati", "riepilogo.json"), "w", encoding="utf-8") as fh:
         json.dump(_json({"esecuzione": info, "spinta_per_asse_N": mis["spinta_per_asse_N"],
                          "massa_obiettivo_kg": mis["massa_obiettivo_kg"], "massa_massima_kg": mis["massa_massima_kg"],
@@ -214,6 +224,10 @@ def main():
         P = f"{x['P_asse_W']:.0f} W/asse" if x["P_asse_W"] else "—"
         m = f"{x['massa_totale_kg']:.2f} kg" if x["massa_totale_kg"] else "—"
         log(f"  {x['scenario']:<26}{pt:>10}{x['D_mm']:>5.0f}mm{P:>12}{x['libero_dopo']:>8.0%}{m:>9}  {stato}")
+        if x["variante"]:
+            log(f"  {'':<26}   ottimo con: " + ", ".join(f"{k} = {v}" for k, v in x["variante"].items()))
+        if x["condotto"]:
+            log(f"  {'':<26}   condotto: {x['condotto']}")
         for a in (x.get("avvisi") or []):
             log(f"  {'':<26}   avviso: {a}")
     log(f"\nVincitore tra gli ammissibili: {vinc}")

@@ -105,7 +105,7 @@ def ottimizza_scenario(sc, cfg, log=print):
             log(f"   D = {D:>4} mm {_txt_var(var)}: {stato}")
     validi = [p for p in progetti if p["completo"] and p["completo"]["ammissibile"]]
     if validi:
-        ottimo = max(validi, key=lambda p: p["completo"]["punteggio_totale"])
+        ottimo = max(validi, key=_chiave_ottimo)
     else:
         ottimo = _meno_peggio(progetti, sc, cfg, tipi, motori, log)
     log(f"   -> ottimo: D = {ottimo['D']:.0f} mm {_txt_var(ottimo['variante'])}"
@@ -114,6 +114,12 @@ def ottimizza_scenario(sc, cfg, log=print):
     log("   massimo diametro ammissibile per variante (Xi): " +
         "; ".join(f"{k} -> {'nessuno' if v is None else f'{v:.0f} mm'}" for k, v in xi.items()))
     return {"scenario": sc, "progetti": progetti, "ottimo": ottimo, "xi": xi}
+
+
+def _chiave_ottimo(p):
+    """Punteggio arrotondato a 4 cifre; a parità vince il condotto più centrato sullo spigolo."""
+    spost = abs(p["geometria"]["layout"].parametri.get("spostamento_mm", 0.0))
+    return (round(p["completo"]["punteggio_totale"], 4), -spost)
 
 
 def _meno_peggio(progetti, sc, cfg, tipi, motori, log):

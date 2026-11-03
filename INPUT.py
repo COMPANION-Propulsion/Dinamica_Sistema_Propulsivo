@@ -352,8 +352,8 @@ SCENARI = [
         "posizione_ventola_frazione": 0.3,    # ventola a questa frazione del condotto, dalla presa
         "verso_coppia_D1": -1,
         "varianti_geometria": {
-            "lunghezza_frazione": [0.7, 0.8, 0.9, 1.0],
-            "spostamento_frazione": [-0.5, 0.0, 0.5],
+            "lunghezza_frazione": [0.6, 0.7, 0.8, 0.9, 1.0],
+            "spostamento_frazione": [-0.5, -0.4, -0.3, -0.2, -0.1, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
         },
     },
 ]
