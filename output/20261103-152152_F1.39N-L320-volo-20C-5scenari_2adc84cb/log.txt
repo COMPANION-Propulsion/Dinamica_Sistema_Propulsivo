@@ -1,0 +1,164 @@
+Esecuzione: c:\Users\Acer\OneDrive - University of Pisa\Desktop\Propulsione_Companion\Dinamica_Sistema_Propulsivo\output\20261103-152152_F1.39N-L320-volo-20C-5scenari_2adc84cb
+Spinta richiesta per asse: 1.389 N (k_m · m · (n g + 4 d / t²), come in Propulsione_dimensionamento.xlsx, massa 5 kg)
+Massa: obiettivo 4.00 kg, massima ammessa 5.00 kg
+Ambiente di progetto: volo_20C  rho = 0.9804 kg/m³
+
+== S1_SFALSATI_12: 12 condotti dritti sfalsati (modello interattivo)
+   D =   26 mm : spinta non raggiunta
+   D =   30 mm : spinta non raggiunta
+   D =   34 mm : punteggio 0.569 con violazioni
+   D =   38 mm : punteggio 0.579 con violazioni
+   D =   42 mm : punteggio 0.559 con violazioni
+   D =   46 mm : punteggio 0.467 con violazioni
+   D =   50 mm : punteggio 0.462 con violazioni
+   D =   55 mm : non ammissibile (geometria)
+   D =   60 mm : non ammissibile (geometria)
+   -> ottimo: D = 38 mm   (NON AMMISSIBILE)   [43 s]
+
+== S2_SPIGOLI_CORTI_12: 12 condotti corti sugli spigoli, presa a metà spigolo
+   D =   26 mm : spinta non raggiunta
+   D =   30 mm : spinta non raggiunta
+   D =   34 mm : punteggio 0.556
+   D =   38 mm : punteggio 0.550 con violazioni
+   D =   42 mm : punteggio 0.558 con violazioni
+   D =   46 mm : punteggio 0.549 con violazioni
+   D =   50 mm : punteggio 0.540 con violazioni
+   D =   55 mm : punteggio 0.430 con violazioni
+   D =   60 mm : non ammissibile (geometria)
+   -> ottimo: D = 34 mm    [41 s]
+
+== S3_SPIGOLI_PIENI_12: 12 condotti sugli spigoli per tutta la lunghezza, scalino ai vertici
+   D =   26 mm : spinta non raggiunta
+   D =   30 mm : spinta non raggiunta
+   D =   34 mm : punteggio 0.469 con violazioni
+   D =   38 mm : non ammissibile (geometria)
+   D =   42 mm : non ammissibile (geometria)
+   D =   46 mm : non ammissibile (geometria)
+   D =   50 mm : non ammissibile (geometria)
+   D =   55 mm : non ammissibile (geometria)
+   D =   60 mm : non ammissibile (geometria)
+   -> ottimo: D = 34 mm   (NON AMMISSIBILE)   [12 s]
+
+== S4_REVERSIBILI_6: 6 ventole reversibili a coppie sfalsate (dal file Excel)
+   D =   26 mm : spinta non raggiunta
+   D =   30 mm : spinta non raggiunta
+   D =   34 mm : spinta non raggiunta
+   D =   38 mm : punteggio 0.511
+   D =   42 mm : punteggio 0.552
+   D =   46 mm : punteggio 0.545
+   D =   50 mm : punteggio 0.520
+   D =   55 mm : non ammissibile (geometria)
+   D =   60 mm : non ammissibile (geometria)
+   -> ottimo: D = 42 mm    [21 s]
+
+== S5_SPIGOLI_INCASSATI_12: 12 condotti corti negli spigoli incassati, blocchi di vertice forati
+   D =   26 mm (lunghezza 0.6, posizione 0.0): spinta non raggiunta
+   D =   30 mm (lunghezza 0.6, posizione 0.0): spinta non raggiunta
+   D =   34 mm (lunghezza 0.6, posizione 0.0): punteggio 0.432 con violazioni
+   D =   38 mm (lunghezza 0.6, posizione 0.0): punteggio 0.455 con violazioni
+   D =   42 mm (lunghezza 0.6, posizione 0.0): punteggio 0.449 con violazioni
+   D =   46 mm (lunghezza 0.6, posizione 0.0): non ammissibile (geometria)
+   D =   50 mm (lunghezza 0.6, posizione 0.0): non ammissibile (geometria)
+   D =   55 mm (lunghezza 0.6, posizione 0.0): non ammissibile (geometria)
+   D =   60 mm (lunghezza 0.6, posizione 0.0): non ammissibile (geometria)
+   D =   26 mm (lunghezza 0.6, posizione 0.5): spinta non raggiunta
+   D =   30 mm (lunghezza 0.6, posizione 0.5): spinta non raggiunta
+   D =   34 mm (lunghezza 0.6, posizione 0.5): punteggio 0.488 con violazioni
+   D =   38 mm (lunghezza 0.6, posizione 0.5): punteggio 0.461 con violazioni
+   D =   42 mm (lunghezza 0.6, posizione 0.5): punteggio 0.455 con violazioni
+   D =   46 mm (lunghezza 0.6, posizione 0.5): non ammissibile (geometria)
+   D =   50 mm (lunghezza 0.6, posizione 0.5): non ammissibile (geometria)
+   D =   55 mm (lunghezza 0.6, posizione 0.5): non ammissibile (geometria)
+   D =   60 mm (lunghezza 0.6, posizione 0.5): non ammissibile (geometria)
+   D =   26 mm (lunghezza 0.6, posizione 1.0): spinta non raggiunta
+   D =   30 mm (lunghezza 0.6, posizione 1.0): spinta non raggiunta
+   D =   34 mm (lunghezza 0.6, posizione 1.0): punteggio 0.517 con violazioni
+   D =   38 mm (lunghezza 0.6, posizione 1.0): punteggio 0.520 con violazioni
+   D =   42 mm (lunghezza 0.6, posizione 1.0): punteggio 0.462 con violazioni
+   D =   46 mm (lunghezza 0.6, posizione 1.0): punteggio 0.455 con violazioni
+   D =   50 mm (lunghezza 0.6, posizione 1.0): non ammissibile (geometria)
+   D =   55 mm (lunghezza 0.6, posizione 1.0): non ammissibile (geometria)
+   D =   60 mm (lunghezza 0.6, posizione 1.0): non ammissibile (geometria)
+   D =   26 mm (lunghezza 0.8, posizione 0.0): spinta non raggiunta
+   D =   30 mm (lunghezza 0.8, posizione 0.0): spinta non raggiunta
+   D =   34 mm (lunghezza 0.8, posizione 0.0): punteggio 0.487 con violazioni
+   D =   38 mm (lunghezza 0.8, posizione 0.0): punteggio 0.460 con violazioni
+   D =   42 mm (lunghezza 0.8, posizione 0.0): punteggio 0.454 con violazioni
+   D =   46 mm (lunghezza 0.8, posizione 0.0): punteggio 0.449 con violazioni
+   D =   50 mm (lunghezza 0.8, posizione 0.0): non ammissibile (geometria)
+   D =   55 mm (lunghezza 0.8, posizione 0.0): non ammissibile (geometria)
+   D =   60 mm (lunghezza 0.8, posizione 0.0): non ammissibile (geometria)
+   D =   26 mm (lunghezza 0.8, posizione 0.5): spinta non raggiunta
+   D =   30 mm (lunghezza 0.8, posizione 0.5): spinta non raggiunta
+   D =   34 mm (lunghezza 0.8, posizione 0.5): punteggio 0.501 con violazioni
+   D =   38 mm (lunghezza 0.8, posizione 0.5): punteggio 0.465 con violazioni
+   D =   42 mm (lunghezza 0.8, posizione 0.5): punteggio 0.458 con violazioni
+   D =   46 mm (lunghezza 0.8, posizione 0.5): punteggio 0.452 con violazioni
+   D =   50 mm (lunghezza 0.8, posizione 0.5): punteggio 0.460 con violazioni
+   D =   55 mm (lunghezza 0.8, posizione 0.5): non ammissibile (geometria)
+   D =   60 mm (lunghezza 0.8, posizione 0.5): non ammissibile (geometria)
+   D =   26 mm (lunghezza 0.8, posizione 1.0): spinta non raggiunta
+   D =   30 mm (lunghezza 0.8, posizione 1.0): spinta non raggiunta
+   D =   34 mm (lunghezza 0.8, posizione 1.0): punteggio 0.516 con violazioni
+   D =   38 mm (lunghezza 0.8, posizione 1.0): punteggio 0.519 con violazioni
+   D =   42 mm (lunghezza 0.8, posizione 1.0): punteggio 0.462 con violazioni
+   D =   46 mm (lunghezza 0.8, posizione 1.0): punteggio 0.455 con violazioni
+   D =   50 mm (lunghezza 0.8, posizione 1.0): punteggio 0.461 con violazioni
+   D =   55 mm (lunghezza 0.8, posizione 1.0): non ammissibile (geometria)
+   D =   60 mm (lunghezza 0.8, posizione 1.0): non ammissibile (geometria)
+   D =   26 mm (lunghezza 1.0, posizione 0.0): spinta non raggiunta
+   D =   30 mm (lunghezza 1.0, posizione 0.0): spinta non raggiunta
+   D =   34 mm (lunghezza 1.0, posizione 0.0): punteggio 0.516 con violazioni
+   D =   38 mm (lunghezza 1.0, posizione 0.0): punteggio 0.519 con violazioni
+   D =   42 mm (lunghezza 1.0, posizione 0.0): punteggio 0.461 con violazioni
+   D =   46 mm (lunghezza 1.0, posizione 0.0): punteggio 0.464 con violazioni
+   D =   50 mm (lunghezza 1.0, posizione 0.0): punteggio 0.461 con violazioni
+   D =   55 mm (lunghezza 1.0, posizione 0.0): non ammissibile (geometria)
+   D =   60 mm (lunghezza 1.0, posizione 0.0): non ammissibile (geometria)
+   D =   26 mm (lunghezza 1.0, posizione 0.5): spinta non raggiunta
+   D =   30 mm (lunghezza 1.0, posizione 0.5): spinta non raggiunta
+   D =   34 mm (lunghezza 1.0, posizione 0.5): punteggio 0.516 con violazioni
+   D =   38 mm (lunghezza 1.0, posizione 0.5): punteggio 0.519 con violazioni
+   D =   42 mm (lunghezza 1.0, posizione 0.5): punteggio 0.461 con violazioni
+   D =   46 mm (lunghezza 1.0, posizione 0.5): punteggio 0.464 con violazioni
+   D =   50 mm (lunghezza 1.0, posizione 0.5): punteggio 0.461 con violazioni
+   D =   55 mm (lunghezza 1.0, posizione 0.5): non ammissibile (geometria)
+   D =   60 mm (lunghezza 1.0, posizione 0.5): non ammissibile (geometria)
+   D =   26 mm (lunghezza 1.0, posizione 1.0): spinta non raggiunta
+   D =   30 mm (lunghezza 1.0, posizione 1.0): spinta non raggiunta
+   D =   34 mm (lunghezza 1.0, posizione 1.0): punteggio 0.516 con violazioni
+   D =   38 mm (lunghezza 1.0, posizione 1.0): punteggio 0.519 con violazioni
+   D =   42 mm (lunghezza 1.0, posizione 1.0): punteggio 0.461 con violazioni
+   D =   46 mm (lunghezza 1.0, posizione 1.0): punteggio 0.464 con violazioni
+   D =   50 mm (lunghezza 1.0, posizione 1.0): punteggio 0.461 con violazioni
+   D =   55 mm (lunghezza 1.0, posizione 1.0): non ammissibile (geometria)
+   D =   60 mm (lunghezza 1.0, posizione 1.0): non ammissibile (geometria)
+   -> ottimo: D = 38 mm (lunghezza 0.6, posizione 1.0)  (NON AMMISSIBILE)   [227 s]
+
+Grafici per scenario...
+Grafici di confronto...
+Excel di confronto...
+
+RIEPILOGO (progetto ottimo di ogni scenario, dal migliore)
+  scenario                   punteggio      D     potenza  libero    massa  stato
+  S1_SFALSATI_12                 0.579   38mm  100 W/asse     65%  5.41 kg  NON ammissibile: massa stimata 5.41 kg oltre la massima ammessa 5.00 kg
+                               avviso: il condotto attraversa una risonanza durante l'accelerazione della ventola
+                               avviso: massa stimata 5.41 kg: 1.41 kg sopra l'obiettivo di 4.0 kg
+  S2_SPIGOLI_CORTI_12            0.556   34mm  145 W/asse     73%  4.91 kg  ammissibile
+                               avviso: con 3 assi a piena spinta servono 17.2 A (pacco 15 A): ammessi 2 assi pieni insieme
+                               avviso: il condotto attraversa una risonanza durante l'accelerazione della ventola
+                               avviso: massa stimata 4.91 kg: 0.91 kg sopra l'obiettivo di 4.0 kg
+  S4_REVERSIBILI_6               0.552   42mm  164 W/asse     71%  4.71 kg  ammissibile
+                               avviso: con 3 assi a piena spinta servono 20.4 A (pacco 15 A): ammessi 2 assi pieni insieme
+                               avviso: il condotto attraversa una risonanza durante l'accelerazione della ventola
+                               avviso: massa stimata 4.71 kg: 0.71 kg sopra l'obiettivo di 4.0 kg
+  S5_SPIGOLI_INCASSATI_12        0.520   38mm   97 W/asse     52%  5.39 kg  NON ammissibile: massa stimata 5.39 kg oltre la massima ammessa 5.00 kg
+                               avviso: il condotto attraversa una risonanza durante l'accelerazione della ventola
+                               avviso: massa stimata 5.39 kg: 1.39 kg sopra l'obiettivo di 4.0 kg
+  S3_SPIGOLI_PIENI_12            0.469   34mm  141 W/asse     67%  5.54 kg  NON ammissibile: massa stimata 5.54 kg oltre la massima ammessa 5.00 kg
+                               avviso: con 3 assi a piena spinta servono 17.6 A (pacco 15 A): ammessi 2 assi pieni insieme
+                               avviso: il condotto attraversa una risonanza durante l'accelerazione della ventola
+                               avviso: massa stimata 5.54 kg: 1.54 kg sopra l'obiettivo di 4.0 kg
+
+Vincitore tra gli ammissibili: S2_SPIGOLI_CORTI_12
+Finito in 400 s. Risultati in c:\Users\Acer\OneDrive - University of Pisa\Desktop\Propulsione_Companion\Dinamica_Sistema_Propulsivo\output\20261103-152152_F1.39N-L320-volo-20C-5scenari_2adc84cb

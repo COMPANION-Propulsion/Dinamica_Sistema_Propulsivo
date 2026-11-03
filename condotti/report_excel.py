@@ -86,6 +86,7 @@ def scrivi(percorso, risultati, cfg, scenari, info, grafici):
     _spazio(wb.create_sheet("Spazio interno"), risultati, cfg)
     _controllo(wb.create_sheet("Controllo e dinamica"), risultati, cfg)
     _struttura(wb.create_sheet("Struttura"), risultati, cfg)
+    _massa(wb.create_sheet("Massa"), risultati, cfg)
     _realizz(wb.create_sheet("Realizzabilità"), risultati)
     _ingestione(wb.create_sheet("Ingestione getti"), risultati, cfg)
     _tutti(wb.create_sheet("Tutti i progetti"), risultati)
@@ -102,7 +103,7 @@ def scrivi(percorso, risultati, cfg, scenari, info, grafici):
 def _leggimi(ws, cfg, info):
     ws.title = "Leggimi"
     _titolo(ws, "COMPANION — confronto delle configurazioni dei condotti",
-            "File generato automaticamente da run_analisi.py: non modificare a mano i valori calcolati.")
+            "File generato automaticamente da RUN.py: non modificare a mano i valori calcolati.")
     righe = [
         ("Esecuzione", info["cartella"]),
         ("Data", info["data"]),
@@ -110,7 +111,9 @@ def _leggimi(ws, cfg, info):
         ("Ambiente di progetto", f"{cfg['ambiente_progetto']} — {cfg['ambienti'][cfg['ambiente_progetto']]['descrizione']}"),
         ("Spinta richiesta per asse (N)", round(cfg["missione"]["spinta_per_asse_N"], 3)),
         ("Origine della spinta", cfg["missione"]["origine_spinta"]),
-        ("Massa del cubo (kg)", cfg["missione"]["massa_cubo_kg"]),
+        ("Massa per dimensionare la spinta (kg)", cfg["missione"]["massa_per_spinta_kg"]),
+        ("Massa obiettivo (kg)", cfg["missione"]["massa_obiettivo_kg"]),
+        ("Massa massima ammessa (kg)", cfg["missione"]["massa_massima_kg"]),
         ("Lato del cubo (mm)", cfg["geometria"]["lato_cubo_mm"]),
         ("Tensione del bus (V)", cfg["elettrico"]["tensione_bus_V"]),
         ("", ""),
@@ -120,11 +123,12 @@ def _leggimi(ws, cfg, info):
         ("Fluidodinamica / Perdite", "Punto di funzionamento della ventola e ripartizione della potenza."),
         ("Spazio interno", "Volume dei condotti, volume libero, collocazione di batteria, ruote, avionica, ESC."),
         ("Controllo e dinamica", "Forze e momenti disponibili, guasti, salita della spinta, margine di fase, ruote di reazione."),
-        ("Struttura", "Frequenze, Campbell, instabilità, sforzi a 1,8 g e 9 g, rigidezza, massa."),
-        ("Realizzabilità", "Parti, curve, giunzioni, attuatori, stampa."),
+        ("Struttura", "Frequenze, Campbell, instabilità, sforzi a 1,8 g e 9 g, rigidezza."),
+        ("Massa", "Bilancio di massa: guscio, telaio, condotti, staffe, bocche, propulsione, componenti; confronto con obiettivo e massima."),
+        ("Realizzabilità", "Parti, curve, attuatori, stampa."),
         ("Ingestione getti", "Indice di riaspirazione per ogni comando su più assi."),
         ("Tutti i progetti", "Ogni combinazione valutata dall'ottimizzatore, anche le scartate."),
-        ("Database scenari", "Descrizione e parametri degli scenari confrontati."),
+        ("Scenari", "Descrizione e parametri degli scenari confrontati (da INPUT.py)."),
         ("Ipotesi e fonti", "Correlazioni usate, campo di validità, valori segnaposto."),
         ("", ""),
         ("LEGENDA", ""),
@@ -151,10 +155,10 @@ def _classifica(ws, risultati, cfg):
     for j, c in enumerate(crit):
         _cella(ws, 4, 4 + j, c, font=F_B)
         _cella(ws, 5, 4 + j, cfg["ottimizzazione"]["pesi"][c], "0.00", F_IN, FILL_IN)
-    _cella(ws, 5, 1, "← valori da input.py, modificabili qui")
+    _cella(ws, 5, 1, "← valori da INPUT.py, modificabili qui")
     tit = (["Scenario", "Nome", "Ammissibile"] + [f"punteggio {c}" for c in crit] +
            ["Totale pesato", "Posizione", "Violazioni | avvisi", "D (mm)", "σ ugello", "Tipo di ventola", "Motore",
-            "Potenza per asse (W)", "Libero dopo i componenti", "Massa propulsione (kg)"])
+            "Potenza per asse (W)", "Libero dopo i componenti", "Massa totale stimata (kg)"])
     _intest(ws, 7, tit)
     ott = [r for r in risultati]
     r0 = 8
@@ -188,7 +192,7 @@ def _classifica(ws, risultati, cfg):
             _cella(ws, row, jt + 5, c["tipo_ventola"])
             _cella(ws, row, jt + 6, c["motore"])
             _cella(ws, row, jt + 7, o["aero"]["P_asse_max"], "0.0")
-            _cella(ws, row, jt + 9, c["massa_propulsione_kg"], "0.00")
+            _cella(ws, row, jt + 9, c["massa_totale_kg"], "0.00")
         _cella(ws, row, jt + 8, o["geometria"]["frazione_libera_dopo"], "0.0%")
     _larghezze(ws, [22, 46, 12] + [12] * len(crit) + [12, 10, 50, 8, 8, 22, 14, 12, 12, 12])
     ws.freeze_panes = "B8"
@@ -196,9 +200,10 @@ def _classifica(ws, risultati, cfg):
     note = ["Come sono costruiti i punteggi (0-1):",
             "spazio: volume libero dopo i componenti, scalato tra i valori di OTTIMIZZAZIONE['scala_volume_libero']; ×0,3 se un componente non entra.",
             "perdite: 70 % potenza elettrica per asse (scala in input) + 30 % quota di potenza utile NON persa nel condotto.",
-            "semplicita: punteggio di realizzabilità (parti, curve, giunzioni, attuatori, stampa).",
-            "robustezza: 60 % forza residua con una ventola guasta, 30 % assenza di servo, 10 % assenza di presa unica condivisa.",
-            "dinamica: 40 % tempo di cambio di verso della spinta, 40 % indice d'ingestione, 20 % tempo di desaturazione."]
+            "semplicita: punteggio di realizzabilità (parti, curve, attuatori, stampa).",
+            "robustezza: forza residua con una ventola guasta / forza richiesta.",
+            "dinamica: 40 % tempo di cambio di verso della spinta, 40 % indice d'ingestione, 20 % tempo di desaturazione.",
+            "massa: massa totale stimata; 1 all'obiettivo (o sotto), 0 alla massa massima ammessa."]
     for i, t in enumerate(note):
         _cella(ws, rnote + i, 1, t, font=F_B if i == 0 else F_N)
 
@@ -249,7 +254,6 @@ def _metriche_ottimo(r, cfg):
         ("Potenza elettrica per asse (caso peggiore)", a.get("P_asse_max"), "W", "0.0"),
         ("Potenza di picco con 3 assi", a.get("P_picco_3assi"), "W", "0"),
         ("Corrente di picco con 3 assi", a.get("I_picco"), "A", "0.0"),
-        ("Calo di spinta con 3 assi (plenum condiviso)", a.get("calo_spinta_3assi"), "", "0.0%"),
         ("CONTROLLO E DINAMICA", None, None, None),
         ("Forza pura minima sui 6 versi", min(c["forza_max_N"].values()) if c else None, "N", "0.00"),
         ("Momento puro minimo sui 3 assi", min(c["momento_max_Nm"].values()) if c else None, "N·m", "0.000"),
@@ -269,15 +273,21 @@ def _metriche_ottimo(r, cfg):
         ("Margine d'instabilità a pressione esterna", c.get("margine_instabilita"), "", "0"),
         ("Sforzo al supporto della ventola a 9 g", c.get("sforzo_9g_MPa"), "MPa", "0.00"),
         ("Rigidezza flessionale portata dai condotti", sum(c["EI_condotti_Nm2"]) if c else None, "N·m²", "0.0"),
-        ("Massa della propulsione (stima)", c.get("massa_propulsione_kg"), "kg", "0.00"),
         ("Assi a piena spinta sostenibili dal pacco", c.get("assi_pieni_ammessi"), "", "0"),
         ("Avvisi (non bloccanti)", "; ".join(c.get("avvisi", [])) or "nessuno", "", None),
+        ("MASSA (stima)", None, None, None),
+        ("Massa totale stimata", c.get("massa_totale_kg"), "kg", "0.00"),
+        ("di cui dipendente dalla configurazione", c.get("massa_configurazione_kg"), "kg", "0.00"),
+        ("Telaio e guscio", (c.get("massa") or {}).get("gruppi", {}).get("telaio e guscio"), "kg", "0.00"),
+        ("Condotti e supporti", (c.get("massa") or {}).get("gruppi", {}).get("condotti e supporti"), "kg", "0.00"),
+        ("Propulsione (motori, ESC, cavi)", (c.get("massa") or {}).get("gruppi", {}).get("propulsione (motori, ESC, cavi)"), "kg", "0.00"),
+        ("Spinta richiesta con la massa stimata", c.get("spinta_richiesta_massa_stimata_N"), "N", "0.000"),
+        ("Forza pura disponibile / richiesta con la massa stimata", c.get("margine_spinta_massa_stimata"), "", "0.00"),
         ("REALIZZABILITÀ", None, None, None),
         ("Parti stampate", car["parti"], "", "0"),
         ("Curve", car["curve"], "", "0"),
         ("Raggio di curva minimo / D", car["R_su_D_minimo"], "", "0.00"),
-        ("Giunzioni", car["giunzioni"], "", "0"),
-        ("Attuatori (motori + servo)", car["attuatori"], "", "0"),
+        ("Attuatori (motori)", car["attuatori"], "", "0"),
         ("Lunghezza totale dei condotti", car["lunghezza_condotti_mm"], "mm", "0"),
         ("Condotti più lunghi del piatto di stampa", car["condotti_oltre_piatto"], "", "0"),
         ("Tipi di pezzo diversi", car["tipi_di_pezzo_diversi"], "", "0"),
@@ -351,8 +361,7 @@ def _fluido(ws, risultati):
 def _perdite(ws, risultati):
     _titolo(ws, "Ripartizione della potenza utile delle ventole, per asse (progetto ottimo)",
             "Potenze in W; le percentuali sono formule.  Energia del getto = parte che produce spinta.")
-    cats = ["griglie", "imbocco", "attrito", "curve", "effetto di sistema", "giunzione", "valvole", "ugello",
-            "energia del getto"]
+    cats = ["griglie", "imbocco", "attrito", "curve", "effetto di sistema", "ugello", "energia del getto"]
     _intest(ws, 4, ["Scenario"] + [f"{c} (W)" for c in cats] + ["Totale (W)"] + [f"{c} (%)" for c in cats])
     row = 5
     for r in _ottimi_lista(risultati):
@@ -373,7 +382,7 @@ def _perdite(ws, risultati):
 def _spazio(ws, risultati, cfg):
     _titolo(ws, "Spazio interno e collocazione dei componenti (progetto ottimo)",
             "Coordinate in mm rispetto al centro del cubo (X destra, Y fronte, Z alto).")
-    _intest(ws, 4, ["Scenario", "D (mm)", "Condotti", "Extra (servo, plenum)", "Libero prima", "Libero dopo",
+    _intest(ws, 4, ["Scenario", "D (mm)", "Condotti", "Volumetti tolti ai vertici", "Libero prima", "Libero dopo",
                     "Cubo libero (mm)", "Sfera libera (mm)", "Gioco minimo (mm)", "Coppia più vicina",
                     "Sovrapposizioni con moduli (cm³)", "Bocche in zone centrali"])
     row = 5
@@ -438,7 +447,7 @@ def _struttura(ws, risultati, cfg):
             f"Materiale: {cfg['materiale_condotto']}; parete {cfg['geometria']['parete_condotto_mm']} mm.")
     tit = ["Scenario", "Campata con ventola (mm)", "1° frequenza (Hz)", "Risonanze attraversate", "Margine Campbell",
            "p critica (Pa)", "Suzione max (Pa)", "Margine instabilità", "Sforzo 1,8 g (MPa)", "Sforzo 9 g (MPa)",
-           "Margine sforzo 9 g", "EI asse X (N·m²)", "EI asse Y (N·m²)", "EI asse Z (N·m²)", "Massa propulsione (kg)"]
+           "Margine sforzo 9 g", "EI asse X (N·m²)", "EI asse Y (N·m²)", "EI asse Z (N·m²)"]
     _intest(ws, 4, tit)
     row = 5
     for r in _ottimi_lista(risultati):
@@ -446,20 +455,64 @@ def _struttura(ws, risultati, cfg):
         vals = [r["scenario"]["id"], c["campata_ventola_mm"], c["f1_Hz"],
                 ", ".join(f"{n} a {N:,.0f}".replace(",", ".") for n, N in c["risonanze_campbell"]) or "nessuna",
                 c["margine_campbell"], c["p_critica_Pa"], c["suzione_max_Pa"], c["margine_instabilita"],
-                c["sforzo_1_8g_MPa"], c["sforzo_9g_MPa"], c["margine_sforzo_9g"]] + list(c["EI_condotti_Nm2"]) + \
-               [c["massa_propulsione_kg"]]
-        fm = [None, "0", "0", None, "0.00", "#,##0", "0", "0", "0.000", "0.000", "0", "0.0", "0.0", "0.0", "0.00"]
+                c["sforzo_1_8g_MPa"], c["sforzo_9g_MPa"], c["margine_sforzo_9g"]] + list(c["EI_condotti_Nm2"])
+        fm = [None, "0", "0", None, "0.00", "#,##0", "0", "0", "0.000", "0.000", "0", "0.0", "0.0", "0.0"]
         for j, (v, f) in enumerate(zip(vals, fm)):
             _cella(ws, row, 1 + j, v, f)
         row += 1
-    _larghezze(ws, [22, 12, 12, 40] + [12] * 11)
+    _larghezze(ws, [22, 12, 12, 40] + [12] * 10)
+
+
+def _massa(ws, risultati, cfg):
+    mis = cfg["missione"]
+    _titolo(ws, "Bilancio di massa (progetto ottimo)",
+            f"Obiettivo {mis['massa_obiettivo_kg']:.2f} kg, massima ammessa {mis['massa_massima_kg']:.2f} kg. "
+            "Stime parametriche: parametri nella sezione TELAIO di INPUT.py. Le righe in grigio sono formule.")
+    ott = _ottimi_lista(risultati)
+    if not ott:
+        return
+    _intest(ws, 4, ["Voce", "Unità"] + [r["scenario"]["id"] for r in ott])
+    voci = list(ott[0]["ottimo"]["completo"]["massa"]["voci"].keys())
+    for i, k in enumerate(voci):
+        row = 5 + i
+        _cella(ws, row, 1, k)
+        _cella(ws, row, 2, "kg")
+        for j, r in enumerate(ott):
+            _cella(ws, row, 3 + j, r["ottimo"]["completo"]["massa"]["voci"][k], "0.000")
+    r_tot = 5 + len(voci)
+    r_ob, r_mx = r_tot + 1, r_tot + 2
+    _cella(ws, r_tot, 1, "TOTALE", font=F_B)
+    _cella(ws, r_ob, 1, "Scarto dall'obiettivo")
+    _cella(ws, r_mx, 1, "Margine sulla massima ammessa")
+    for rr in (r_tot, r_ob, r_mx):
+        _cella(ws, rr, 2, "kg")
+    for j in range(len(ott)):
+        cl = COL(3 + j)
+        _cella(ws, r_tot, 3 + j, f"=SUM({cl}5:{cl}{r_tot - 1})", "0.000", F_B, FILL_F)
+        _cella(ws, r_ob, 3 + j, f"={cl}{r_tot}-{mis['massa_obiettivo_kg']}", "+0.000;-0.000", fill=FILL_F)
+        _cella(ws, r_mx, 3 + j, f"={mis['massa_massima_kg']}-{cl}{r_tot}", "+0.000;-0.000", fill=FILL_F)
+    row = r_mx + 2
+    _cella(ws, row, 1, "Dettagli", font=F_B)
+    det = list(ott[0]["ottimo"]["completo"]["massa"]["dettagli"].keys())
+    for i, k in enumerate(det):
+        _cella(ws, row + 1 + i, 1, k.replace("_", " "))
+        for j, r in enumerate(ott):
+            _cella(ws, row + 1 + i, 3 + j, r["ottimo"]["completo"]["massa"]["dettagli"][k], "0.00")
+    row = row + len(det) + 3
+    _cella(ws, row, 1, "Componenti fissi (uguali per tutti gli scenari)", font=F_B)
+    for i, (k, v) in enumerate(ott[0]["ottimo"]["completo"]["massa"]["componenti"].items()):
+        _cella(ws, row + 1 + i, 1, k)
+        _cella(ws, row + 1 + i, 2, "kg")
+        _cella(ws, row + 1 + i, 3, v, "0.000")
+    _larghezze(ws, [44, 8] + [20] * len(ott))
+    ws.freeze_panes = "C5"
 
 
 def _realizz(ws, risultati):
     _titolo(ws, "Realizzabilità (progetto ottimo)")
-    keys = ["parti", "curve", "R_su_D_minimo", "giunzioni", "lunghezza_condotti_mm", "condotti_oltre_piatto",
-            "pezzi_con_supporti", "tipi_di_pezzo_diversi", "motori", "servo", "attuatori", "prese", "uscite"]
-    sub = ["parti", "curve", "giunzioni", "attuatori", "stampa"]
+    keys = ["parti", "curve", "R_su_D_minimo", "lunghezza_condotti_mm", "condotti_oltre_piatto",
+            "pezzi_con_supporti", "tipi_di_pezzo_diversi", "motori", "attuatori", "prese", "uscite"]
+    sub = ["parti", "curve", "attuatori", "stampa"]
     _intest(ws, 4, ["Scenario"] + keys + [f"sotto-punteggio {s}" for s in sub] + ["Punteggio realizzabilità"])
     row = 5
     for r in risultati:
@@ -541,12 +594,13 @@ def _viol_geom(g):
 
 
 def _database(ws, scenari):
-    _titolo(ws, "Database degli scenari confrontati", "Da database_scenari.py.")
+    ws.title = "Scenari"
+    _titolo(ws, "Scenari confrontati", "Da INPUT.py, sezione 11 (SCENARI).")
     tit = ["Id", "Nome", "Topologia", "Origine", "Descrizione", "Pregi attesi", "Difetti attesi", "Parametri"]
     _intest(ws, 4, tit)
     for i, s in enumerate(scenari):
         row = 5 + i
-        par = {k: v for k, v in s.items() if k not in ("id", "nome", "topologia", "origine", "descrizione",
+        par = {k: v for k, v in s.items() if k not in ("id", "attivo", "nome", "topologia", "origine", "descrizione",
                                                      "pregi_attesi", "difetti_attesi")}
         for j, v in enumerate([s["id"], s["nome"], s["topologia"], s.get("origine", ""), s["descrizione"],
                                s.get("pregi_attesi", ""), s.get("difetti_attesi", ""), str(par)]):
@@ -562,13 +616,11 @@ def _ipotesi(ws, cfg):
         ("Flusso", "Incomprimibile (Mach di punta < 0,3 verificato); aria secca, gas perfetto; viscosità di Sutherland."),
         ("Bilancio", "p0 lungo il condotto = p_ambiente − perdite + Δp ventola; uscita a pressione ambiente; aria aspirata da ferma."),
         ("Spinta", "Flusso di quantità di moto del getto: β ρ A v² (β = 1,02); nessun termine di pressione."),
-        ("Perdite nei rami in parallelo", "Sommate come potenza (Q·Δp), mai come pressioni."),
+        ("Perdite", "Sommate come potenza (Q·Δp) per la ripartizione per categoria."),
         ("Attrito", "Laminare 64/Re; turbolento Haaland (≈ Colebrook); transizione interpolata 2300-4000."),
         ("Griglie", "Idelchik, fili tondi: K = k_Re [1,3(1−f) + (1/f − 1)²], riferito alla velocità a monte."),
         ("Imbocco", "Idelchik / ASHRAE, bordo raggiato: K da 0,5 (spigolo vivo) a 0,03 (r/D ≥ 0,2)."),
         ("Curve", "Idelchik: K = A1(angolo) B1(R/D) k_Re; sotto R/D = 0,5 gomito a spigolo vivo."),
-        ("Giunzione a Y", "Idelchik diramazione: K = A'[1 + (w_r/w_t)² − 2 (w_r/w_t) cos α], riferito al tronco."),
-        ("Valvola", "Orifizio: K = (1/(Cc a) − 1)² + K_aperta, Cc = 0,61 + 0,39 a³."),
         ("Ugello / diffusore", "Convergente: K piccolo sull'uscita; diffusore di Gibson con avviso oltre 12° totali."),
         ("Effetto di sistema", "Ispirato ad AMCA 201: curva entro 2,5 D dalla ventola. VALORI INDICATIVI, da verificare."),
         ("Ventola", "Mappe adimensionali generiche (SEGNAPOSTO); gioco di punta; Moody (esponente 0,2) per Reynolds; statore o vortice perso."),
@@ -576,7 +628,9 @@ def _ipotesi(ws, cfg):
         ("Ingestione", "Indice di screening (pozzo emisferico contro getto tondo): NON è una previsione CFD."),
         ("Dinamica", "Salita con limite di corrente; PD con zero a ω_c/3; attuatore del primo ordine τ = t90/2,3."),
         ("Struttura", "Tubo appoggiato + massa (Dunkerley); p_cr = 2E/(1−ν²)(t/D)³; flessione della massa a n g."),
-        ("Spazio", f"Voxel da {cfg['esecuzione']['risoluzione_voxel_mm']} mm; tubi come capsule (prudente sulle curve); componenti come scatole."),
+        ("Spazio", f"Voxel da {cfg['esecuzione']['risoluzione_voxel_mm']} mm; tubi come capsule (prudente sulle curve); componenti come scatole; volumetti d'angolo tolti ai vertici."),
+        ("Spigoli centrati", "Condotto dritto per ogni spigolo, tangente alle due facce, centrato sulla mezzeria. Accorciato (lunghezza_frazione) e/o spostato lungo lo spigolo (spostamento_frazione) fino a che le estremità restano a distanza c = a − (2 Ro + gioco) dal vertice. Ai vertici si toglie un volumetto d'angolo dalle estremità alla faccia interna: il vertice è aperto e i condotti sboccano lì."),
+        ("Massa", "Stima parametrica (condotti/massa.py, parametri TELAIO in INPUT.py): guscio a spessore equivalente, longheroni e nodi, pareti dei condotti, alloggiamenti, staffe, flange e griglie, fori di vertice, motori, ESC, cavi, viteria; componenti da COMPONENTI e MASSE_FISSE. SEGNAPOSTO finché non si pesa un prototipo."),
         ("Componenti", "Batteria NiMH 150×100×80, avionica 200×150×50 (COMPASS); inviluppo ruote 130³ SEGNAPOSTO."),
         ("Fonti", "Idelchik, Handbook of Hydraulic Resistance; Miller, Internal Flow Systems; AMCA 201; Pereira 2008; Graf 2005; Akturk & Camci 2011; Brandt & Selig 2011; ESA EUG cap. 5; ESDP; SPFC."),
     ]

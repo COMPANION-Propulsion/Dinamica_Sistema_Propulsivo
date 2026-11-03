@@ -2,8 +2,8 @@
 
 Percorre ogni polilinea: tratti dritti accorciati delle tangenti delle
 curve, curve con raggio e angolo reali, ventola inserita alla sua ascissa,
-effetti di sistema calcolati dalla distanza reale tra ventola e curve o
-giunzioni, ugello e griglia all'uscita.
+effetti di sistema calcolati dalla distanza reale tra ventola e curve,
+ugello e griglia all'uscita.
 """
 import math
 import numpy as np
@@ -132,21 +132,16 @@ def costruisci_unita(ug, cfg, tipo_ventola, D_mm, sigma, motore, aperture=None):
     ev = R.ElementoVentola("ventola", L=el["lunghezza_ventola_su_D"] * D, ventola=v)
     # --- imbocco
     ingresso = []
-    if ug.da_plenum:
-        ingresso.append(R.Imbocco("imbocco (dal plenum)", D=D, r_su_D=el["raggio_imbocco_plenum_su_D"]))
-    else:
-        if el["griglia_ingresso"]:
-            ingresso.append(R.Griglia("griglia d'ingresso", D=D, porosita=el["porosita_griglia_ingresso"],
-                                      d_filo=el["diametro_filo_griglia_mm"] / 1000))
-        ingresso.append(R.Imbocco("imbocco", D=D, r_su_D=el["raggio_imbocco_su_D"]))
+    if el["griglia_ingresso"]:
+        ingresso.append(R.Griglia("griglia d'ingresso", D=D, porosita=el["porosita_griglia_ingresso"],
+                                  d_filo=el["diametro_filo_griglia_mm"] / 1000))
+    ingresso.append(R.Imbocco("imbocco", D=D, r_su_D=el["raggio_imbocco_su_D"]))
     seq_t, av = _segmenti(ug.tronco)
     avvisi += av
-    singolo = len(ug.rami) == 0
     De_mm = ug.uscite[0]["D"]
-    semi = el["semiangolo_ugello_deg"]
     tronco, pos_f = _converti(seq_t, ug.tronco.D, "tronco", rug, s_ventola=ug.s_ventola, elem_ventola=ev,
-                              L_ugello=ug.tronco.L_ugello if singolo else 0.0,
-                              D_fine=ug.tronco.D_fine if singolo else None, semiangolo=semi, avvisi=avvisi)
+                              L_ugello=ug.tronco.L_ugello, D_fine=ug.tronco.D_fine,
+                              semiangolo=el["semiangolo_ugello_deg"], avvisi=avvisi)
     # --- effetti di sistema (distanze reali)
     pos = _posizioni(tronco)
     i_f = tronco.index(ev)
@@ -165,70 +160,19 @@ def costruisci_unita(ug, cfg, tipo_ventola, D_mm, sigma, motore, aperture=None):
             if K > 0:
                 extra_valle.append(R.EffettoSistema(f"effetto di sistema: {e.nome} a {dist:.1f} D a valle",
                                                     D=D, K=K))
-    if not singolo:
-        s_fine = pos[-1][1]
-        dist = (s_fine - s_out_f) / D_mm
-        K = PE.k_effetto_sistema_valle(dist, v.statore)
-        if K > 0:
-            extra_valle.append(R.EffettoSistema(f"effetto di sistema: giunzione a {dist:.1f} D a valle", D=D, K=K))
     i_f = tronco.index(ev)
     tronco = ingresso + tronco[:i_f] + extra_monte + [ev] + extra_valle + tronco[i_f + 1:]
-    # --- rami
-    rami = []
-    if singolo:
-        usc = ug.uscite[0]
-        coda = []
-        if el["griglia_uscita"]:
-            coda.append(R.Griglia("griglia d'uscita", D=De_mm / 1000, porosita=el["porosita_griglia_uscita"],
-                                  d_filo=el["diametro_filo_griglia_mm"] / 1000))
-        if ug.reversibile:          # condotto simmetrico: imbocco raccordato anche all'altra estremità
-            coda.insert(0, R.Imbocco("bordo raccordato d'uscita (reversibile)", D=De_mm / 1000, r_su_D=0.0))
-            coda[0].dp = lambda Q, aria, ctx: 0.0       # all'uscita il raccordo non perde
-        rami.append(R.Ramo("uscita", coda, R.Uscita("uscita", D=De_mm / 1000, alfa_e=el["alfa_getto"],
-                                                    beta_e=el["beta_getto"],
-                                                    direzione_getto=tuple(usc["getto"]),
-                                                    posizione=tuple(np.asarray(usc["pos"]) / 1000))))
-    else:
-        for i, (perc, usc) in enumerate(zip(ug.rami, ug.uscite)):
-            seq_r, av = _segmenti(perc)
-            avvisi += av
-            # angolo tra tronco e primo segmento del ramo
-            dt = ug.tronco.punti[-1] - ug.tronco.punti[-2]
-            dr = perc.punti[1] - perc.punti[0]
-            alfa = math.degrees(math.acos(np.clip(dt @ dr / (np.linalg.norm(dt) * np.linalg.norm(dr)), -1, 1)))
-            elems = [R.Giunzione(f"giunzione ramo {i + 1}", D_tronco=D, D_ramo=perc.D / 1000, alfa=alfa)]
-            if any(vv["ramo"] == i for vv in ug.valvole):
-                nome_v = [vv["nome"] for vv in ug.valvole if vv["ramo"] == i][0]
-                elems.append(R.Valvola(nome_v, D=perc.D / 1000, apertura=1.0,
-                                       k_aperta=el["k_valvola_aperta"]))
-            corpo, _ = _converti(seq_r, perc.D, f"ramo {i + 1}", rug, L_ugello=perc.L_ugello,
-                                 D_fine=perc.D_fine, semiangolo=semi, avvisi=avvisi)
-            elems += corpo
-            if el["griglia_uscita"]:
-                elems.append(R.Griglia(f"griglia d'uscita {i + 1}", D=usc["D"] / 1000,
-                                       porosita=el["porosita_griglia_uscita"],
-                                       d_filo=el["diametro_filo_griglia_mm"] / 1000))
-            rami.append(R.Ramo(f"ramo {i + 1}", elems,
-                               R.Uscita(f"uscita {i + 1}", D=usc["D"] / 1000, alfa_e=el["alfa_getto"],
-                                        beta_e=el["beta_getto"], direzione_getto=tuple(usc["getto"]),
-                                        posizione=tuple(np.asarray(usc["pos"]) / 1000))))
-    u = R.UnitaRete(ug.nome, tronco, rami, v, da_plenum=ug.da_plenum, reversibile=ug.reversibile)
+    # --- coda d'uscita
+    usc = ug.uscite[0]
+    coda = []
+    if el["griglia_uscita"]:
+        coda.append(R.Griglia("griglia d'uscita", D=De_mm / 1000, porosita=el["porosita_griglia_uscita"],
+                              d_filo=el["diametro_filo_griglia_mm"] / 1000))
+    if ug.reversibile:          # condotto simmetrico: imbocco raccordato anche all'altra estremità
+        coda.insert(0, R.Imbocco("bordo raccordato d'uscita (reversibile)", D=De_mm / 1000, r_su_D=0.0))
+        coda[0].dp = lambda Q, aria, ctx: 0.0       # all'uscita il raccordo non perde
+    rami = [R.Ramo("uscita", coda, R.Uscita("uscita", D=De_mm / 1000, alfa_e=el["alfa_getto"],
+                                            beta_e=el["beta_getto"], direzione_getto=tuple(usc["getto"]),
+                                            posizione=tuple(np.asarray(usc["pos"]) / 1000)))]
+    u = R.UnitaRete(ug.nome, tronco, rami, v, reversibile=ug.reversibile)
     return u, avvisi
-
-
-def costruisci_plenum(layout, cfg, Q_max_tot):
-    """Plenum interno con griglia sulla faccia libera, dimensionata sulla portata massima."""
-    if layout.plenum is None:
-        return None
-    el = cfg["elementi"]
-    pl = layout.plenum
-    A_mm2 = pl.get("area_mm2")
-    lato_max = layout.L - 2 * layout.parete - 2 * el["margine_griglia_plenum_mm"]
-    if not A_mm2:
-        A_mm2 = Q_max_tot / el["velocita_griglia_plenum_m_s"] * 1e6
-    A_mm2 = min(A_mm2, lato_max ** 2)
-    lato = math.sqrt(A_mm2)
-    g = R.Griglia("griglia del plenum", D=lato / 1000, porosita=el["porosita_griglia_ingresso"],
-                  d_filo=el["diametro_filo_griglia_mm"] / 1000, A_frontale=A_mm2 * 1e-6)
-    return R.Plenum(griglia=g, K_interno=el["K_passaggio_interno_plenum"], A_griglia=A_mm2 * 1e-6,
-                    posizione=tuple(pl["pos"] / 1000), normale=tuple(pl["normale"])), lato

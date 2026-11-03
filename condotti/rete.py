@@ -2,20 +2,19 @@
 
 Ipotesi (valide per il problema e verificate in uscita):
   - flusso incomprimibile: Mach di punta < 0,3 (controllato);
-  - aria aspirata da ferma: pressione totale all'imbocco = p_ambiente
-    (oppure la pressione del plenum interno, se l'unità aspira da lì);
+  - aria aspirata da ferma: pressione totale all'imbocco = p_ambiente;
   - getto libero subsonico: pressione statica all'uscita = p_ambiente;
   - spinta = flusso di quantità di moto del getto, beta rho A_e v_e^2
     (nessun termine di pressione, aria ferma lontano dal cubo);
   - equazione dell'energia lungo il condotto:
       p0(s) = p0(0) - somma perdite + Dp_ventola
     con p0 = p + 1/2 rho alpha v^2 (alpha = coefficiente di energia cinetica).
-Per ogni ramo vale:   Dp_ventola(Q) = perdite(Q) + 1/2 rho alpha_e v_e^2 - p_ingresso_rel
+Per ogni unità vale:  Dp_ventola(Q) = perdite(Q) + 1/2 rho alpha_e v_e^2
 """
 from dataclasses import dataclass, field
 import math
 import numpy as np
-from scipy.optimize import brentq, root
+from scipy.optimize import brentq
 
 from . import perdite as P
 
@@ -62,15 +61,13 @@ class Griglia(Elemento):
     D: float = 0.05
     porosita: float = 0.6
     d_filo: float = 0.5e-3
-    A_frontale: float = None      # se diversa dalla sezione del condotto (es. griglia del plenum)
     avvisi: list = field(default_factory=list)
 
     def D_in(self):
         return self.D
 
     def dp(self, Q, aria, ctx):
-        A = self.A_frontale or area(self.D)
-        v = Q / A
+        v = Q / area(self.D)
         Re_f = (v / self.porosita) * self.d_filo / aria.nu
         K, av = P.k_griglia(self.porosita, Re_f)
         self.avvisi = av
@@ -186,41 +183,6 @@ class ElementoVentola(Elemento):
 
 
 @dataclass
-class Giunzione(Elemento):
-    D_tronco: float = 0.05
-    D_ramo: float = 0.035
-    alfa: float = 30.0
-
-    def D_in(self):
-        return self.D_ramo
-
-    def dp(self, Q, aria, ctx):
-        Qt = ctx.get("Q_tronco", Q)
-        vt, vr = Qt / area(self.D_tronco), Q / area(self.D_ramo)
-        return P.k_diramazione(vr, vt, self.alfa) * aria.q(vt)
-
-    def categoria(self):
-        return "giunzione"
-
-
-@dataclass
-class Valvola(Elemento):
-    D: float = 0.035
-    apertura: float = 1.0
-    k_aperta: float = 0.2
-
-    def D_in(self):
-        return self.D
-
-    def dp(self, Q, aria, ctx):
-        a = ctx.get("aperture", {}).get(self.nome, self.apertura)
-        return P.k_valvola(a, self.k_aperta) * aria.q(Q / area(self.D))
-
-    def categoria(self):
-        return "valvole"
-
-
-@dataclass
 class Ugello(Elemento):
     D1: float = 0.05
     D2: float = 0.045
@@ -276,10 +238,9 @@ class Ramo:
 @dataclass
 class UnitaRete:
     nome: str
-    tronco: list                  # elementi dall'imbocco alla giunzione (o all'uscita)
-    rami: list                    # lista di Ramo (uno solo se il condotto non si divide)
+    tronco: list                  # elementi dall'imbocco alla fine del condotto
+    rami: list                    # un solo Ramo: coda (griglia d'uscita) e uscita
     ventola: object               # Ventola
-    da_plenum: bool = False
     reversibile: bool = False
 
     def elemento_ventola(self):
@@ -290,20 +251,6 @@ class UnitaRete:
 
     def imposta_N(self, N):
         self.elemento_ventola().N = N
-
-
-@dataclass
-class Plenum:
-    """Presa unica condivisa (griglia su una faccia + volume interno)."""
-    griglia: Griglia
-    K_interno: float = 1.0        # perdita del passaggio nel volume interno, riferita alla velocità in griglia
-    A_griglia: float = 0.01
-    posizione: tuple = (0, 0, 0)
-    normale: tuple = (-1, 0, 0)
-
-    def dp(self, Q_tot, aria):
-        v = Q_tot / self.A_griglia
-        return self.griglia.dp(Q_tot, aria, {}) + self.K_interno * aria.q(v)
 
 
 def _perdite_lista(elementi, Q, aria, ctx):
@@ -317,90 +264,42 @@ def _perdite_lista(elementi, Q, aria, ctx):
     return tot, per_cat
 
 
-def _residui_unita(u, Qrami, aria, p_in_rel, ctx_base):
-    Qt = float(np.sum(Qrami))
-    ev = u.elemento_ventola()
-    gain = ev.guadagno(Qt, aria)
-    loss_t, _ = _perdite_lista(u.tronco, Qt, aria, ctx_base)
-    res = []
-    for Qb, r in zip(Qrami, u.rami):
-        ctx = dict(ctx_base, Q_tronco=Qt)
-        loss_b, _ = _perdite_lista(r.elementi, Qb, aria, ctx)
-        ve = Qb / area(r.uscita.D)
-        ke = r.uscita.alfa_e * aria.q(ve)
-        res.append(p_in_rel + gain - loss_t - loss_b - ke)
-    return res
+def _residuo(u, Q, aria, ctx):
+    """Salto della ventola meno perdite meno energia cinetica del getto (Pa)."""
+    gain = u.elemento_ventola().guadagno(Q, aria)
+    r = u.rami[0]
+    loss_t, _ = _perdite_lista(u.tronco, Q, aria, ctx)
+    loss_r, _ = _perdite_lista(r.elementi, Q, aria, ctx)
+    ke = r.uscita.alfa_e * aria.q(Q / area(r.uscita.D))
+    return gain - loss_t - loss_r - ke
 
 
-def _risolvi_singola(u, aria, p_in_rel, ctx):
-    """Unità con un solo ramo: radice scalare con brentq (robusta)."""
+def _risolvi_singola(u, aria, ctx):
+    """Portata di equilibrio: radice scalare con brentq (robusta)."""
     ev = u.elemento_ventola()
     Qmax = u.ventola.Q_max(ev.N)
     if Qmax <= 0:
-        return [0.0]
-    f = lambda Q: _residui_unita(u, [Q], aria, p_in_rel, ctx)[0]
+        return 0.0
+    f = lambda Q: _residuo(u, Q, aria, ctx)
     lo = Qmax * 1e-4
     if f(lo) <= 0:
-        return [0.0]
+        return 0.0
     if f(Qmax) >= 0:
-        return [Qmax]
-    return [brentq(f, lo, Qmax, xtol=1e-9, rtol=1e-8)]
+        return Qmax
+    return brentq(f, lo, Qmax, xtol=1e-9, rtol=1e-8)
 
 
-def risolvi(unita, aria, plenum=None, ctx=None):
-    """Risolve contemporaneamente tutte le unità attive (accoppiate dal plenum).
+def risolvi(unita, aria, ctx=None):
+    """Punto di funzionamento di ogni unità (le unità sono indipendenti).
 
     unita: lista di UnitaRete con N già impostato.
-    Ritorna dict nome_unita -> {"Q_rami": [...], "Q": ..., "p_in_rel": ...}.
+    Ritorna dict nome_unita -> {"Q_rami": [Q], "Q": Q, "p_in_rel": 0}.
     """
     ctx = ctx or {}
-    # 1) stima disaccoppiata
-    stima = {}
+    out = {}
     for u in unita:
-        if len(u.rami) == 1:
-            stima[u.nome] = _risolvi_singola(u, aria, 0.0, ctx)
-        else:
-            q1 = _risolvi_singola(UnitaRete(u.nome, u.tronco, [u.rami[0]], u.ventola), aria, 0.0, ctx)[0]
-            stima[u.nome] = [q1 / len(u.rami)] * len(u.rami)
-    servono_sistema = plenum is not None or any(len(u.rami) > 1 for u in unita)
-    if not servono_sistema:
-        return {u.nome: {"Q_rami": stima[u.nome], "Q": sum(stima[u.nome]), "p_in_rel": 0.0} for u in unita}
-    # 2) sistema completo
-    idx, x0 = [], []
-    for u in unita:
-        for k in range(len(u.rami)):
-            idx.append((u, k))
-            x0.append(max(stima[u.nome][k], 1e-6))
-    x0 = np.array(x0)
-    scala = max(float(np.mean(x0)), 1e-6)
-
-    def F(xs):
-        x = np.abs(xs) * scala
-        Qtot = float(np.sum(x))
-        p_in = -plenum.dp(Qtot, aria) if plenum is not None else 0.0
-        out, i = [], 0
-        for u in unita:
-            n = len(u.rami)
-            r = _residui_unita(u, x[i:i + n], aria, p_in if u.da_plenum else 0.0, ctx)
-            out.extend(r)
-            i += n
-        q_ref = max(aria.q(10.0), 1.0)
-        return np.array(out) / q_ref
-
-    sol = root(F, x0 / scala, method="hybr")
-    x = np.abs(sol.x) * scala
-    if not sol.success or np.max(np.abs(F(sol.x))) > 1e-4:
-        sol2 = root(F, x0 / scala, method="lm")
-        if np.max(np.abs(F(sol2.x))) < np.max(np.abs(F(sol.x))):
-            x = np.abs(sol2.x) * scala
-    Qtot = float(np.sum(x))
-    p_in = -plenum.dp(Qtot, aria) if plenum is not None else 0.0
-    out, i = {}, 0
-    for u in unita:
-        n = len(u.rami)
-        q = list(x[i:i + n])
-        out[u.nome] = {"Q_rami": q, "Q": sum(q), "p_in_rel": p_in if u.da_plenum else 0.0}
-        i += n
+        Q = _risolvi_singola(u, aria, ctx)
+        out[u.nome] = {"Q_rami": [Q], "Q": Q, "p_in_rel": 0.0}
     return out
 
 
@@ -410,9 +309,8 @@ def risolvi(unita, aria, plenum=None, ctx=None):
 def bilancio_unita(u, sol, aria, ctx=None):
     """Spinte, perdite per categoria, potenze e coppie di una unità risolta.
 
-    Le perdite si sommano come POTENZA (Q * Dp): nei rami in parallelo le
-    pressioni non si sommano.  'perdite_cat_Pa' è la pressione equivalente
-    riferita alla portata totale (potenza / Q totale).
+    Le perdite si sommano come POTENZA (Q * Dp).  'perdite_cat_Pa' è la
+    pressione equivalente riferita alla portata (potenza / Q).
     """
     ctx = ctx or {}
     Qr = sol["Q_rami"]
@@ -424,8 +322,7 @@ def bilancio_unita(u, sol, aria, ctx=None):
     spinte, forze, P_getto = [], np.zeros(3), 0.0
     momenti = np.zeros(3)
     for Qb, r in zip(Qr, u.rami):
-        c2 = dict(ctx, Q_tronco=Qt)
-        lb, cb = _perdite_lista(r.elementi, Qb, aria, c2)
+        lb, cb = _perdite_lista(r.elementi, Qb, aria, ctx)
         for k, v in cb.items():
             cat_W[k] = cat_W.get(k, 0.0) + v * Qb
         A = area(r.uscita.D)
@@ -493,14 +390,13 @@ def profilo_percorso(elementi, Q, aria, p0_iniziale, ctx, n_per_tratto=12):
 
 
 def profili_unita(u, sol, aria, ctx=None):
-    """Profili del tronco e di ciascun ramo (il ramo prosegue la coordinata s)."""
+    """Profili del tronco e della coda d'uscita (la coda prosegue la coordinata s)."""
     ctx = ctx or {}
     Qt = sol["Q"]
     pr_t = profilo_percorso(u.tronco, Qt, aria, sol["p_in_rel"], ctx)
     out = {"tronco": pr_t, "rami": []}
     for Qb, r in zip(sol["Q_rami"], u.rami):
-        c2 = dict(ctx, Q_tronco=Qt)
-        pr = profilo_percorso(r.elementi, Qb, aria, pr_t["p0"][-1], c2)
+        pr = profilo_percorso(r.elementi, Qb, aria, pr_t["p0"][-1], ctx)
         pr["s"] = pr["s"] + pr_t["s"][-1]
         # punto di uscita
         A = area(r.uscita.D)
@@ -510,13 +406,13 @@ def profili_unita(u, sol, aria, ctx=None):
     return out
 
 
-def N_per_spinta(u, F_obiettivo, aria, N_max, plenum=None, ctx=None, direzione=None):
+def N_per_spinta(u, F_obiettivo, aria, N_max, ctx=None, direzione=None):
     """Giri necessari per la spinta F_obiettivo (sulla direzione nominale)."""
     ctx = ctx or {}
 
     def spinta(N):
         u.imposta_N(N)
-        sol = risolvi([u], aria, plenum, ctx)[u.nome]
+        sol = risolvi([u], aria, ctx)[u.nome]
         b = bilancio_unita(u, sol, aria, ctx)
         if direzione is not None:
             return float(np.dot(b["forza"], direzione))

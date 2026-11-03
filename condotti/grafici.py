@@ -18,8 +18,7 @@ plt.rcParams.update({"font.size": 9, "axes.grid": True, "grid.alpha": 0.3, "figu
                      "axes.spines.top": False, "axes.spines.right": False, "svg.fonttype": "none"})
 COLORI = ["#1f5bd8", "#e8590c", "#2b8a3e", "#ae3ec9", "#c92a2a", "#0b7285", "#5c940d", "#f59f00"]
 CAT_COL = {"griglie": "#868e96", "imbocco": "#74c0fc", "attrito": "#1971c2", "curve": "#f08c00",
-           "effetto di sistema": "#e8590c", "giunzione": "#c92a2a", "valvole": "#862e9c",
-           "ugello": "#2f9e44", "energia del getto": "#ffd43b"}
+           "effetto di sistema": "#e8590c", "ugello": "#2f9e44", "energia del getto": "#ffd43b"}
 
 
 def _salva(fig, percorso, formati):
@@ -33,21 +32,21 @@ def _salva(fig, percorso, formati):
     return out
 
 
-def _solve(un, aria, pl, N, ctx=None):
+def _solve(un, aria, N, ctx=None):
     un.imposta_N(N)
-    sol = R.risolvi([un], aria, pl, ctx or {})[un.nome]
+    sol = R.risolvi([un], aria, ctx or {})[un.nome]
     return sol, R.bilancio_unita(un, sol, aria, ctx or {})
 
 
 # ======================================================================= profili
-def _disegna_profili(axs, un, aria, pl, N, colore, etichetta, ctx=None, confini=True):
-    sol, _ = _solve(un, aria, pl, N, ctx)
+def _disegna_profili(axs, un, aria, N, colore, etichetta, ctx=None, confini=True):
+    sol, _ = _solve(un, aria, N, ctx)
     prf = R.profili_unita(un, sol, aria, ctx or {})
     pezzi = [prf["tronco"]] + prf["rami"]
     for k, p in enumerate(pezzi):
-        ls = "-" if k <= 1 else "--"
+        ls = "-"
         lab = etichetta if k == 0 else None
-        if k >= 1:          # il ramo parte dalla fine del tronco
+        if k >= 1:          # la coda d'uscita parte dalla fine del tronco
             s = np.concatenate([[prf["tronco"]["s"][-1]], p["s"]])
             v = np.concatenate([[prf["tronco"]["v"][-1]], p["v"]])
             pp = np.concatenate([[prf["tronco"]["p"][-1]], p["p"]])
@@ -66,19 +65,19 @@ def _disegna_profili(axs, un, aria, pl, N, colore, etichetta, ctx=None, confini=
     return sol
 
 
-def grafico_profili(un, pl, arie, N_lista, ambiente_rif, titolo, percorso, formati, ctx=None):
+def grafico_profili(un, arie, N_lista, ambiente_rif, titolo, percorso, formati, ctx=None):
     fig, axs = plt.subplots(3, 1, figsize=(9, 8.5), sharex=True)
     for i, N in enumerate(N_lista):
-        _disegna_profili(axs, un, arie[ambiente_rif], pl, N, COLORI[i % 8], f"{N:,.0f} giri/min".replace(",", "."),
+        _disegna_profili(axs, un, arie[ambiente_rif], N, COLORI[i % 8], f"{N:,.0f} giri/min".replace(",", "."),
                          ctx, confini=(i == 0))
     _finisci_profili(fig, axs, titolo + f" — ambiente {ambiente_rif}")
     return _salva(fig, percorso, formati)
 
 
-def grafico_profili_ambienti(un, pl, arie, N, titolo, percorso, formati):
+def grafico_profili_ambienti(un, arie, N, titolo, percorso, formati):
     fig, axs = plt.subplots(3, 1, figsize=(9, 8.5), sharex=True)
     for i, (nome, aria) in enumerate(arie.items()):
-        _disegna_profili(axs, un, aria, pl, N, COLORI[i % 8], f"{nome} (ρ = {aria.rho:.3f} kg/m³)", confini=(i == 0))
+        _disegna_profili(axs, un, aria, N, COLORI[i % 8], f"{nome} (ρ = {aria.rho:.3f} kg/m³)", confini=(i == 0))
     _finisci_profili(fig, axs, titolo + f" — {N:,.0f} giri/min".replace(",", "."))
     return _salva(fig, percorso, formati)
 
@@ -91,12 +90,12 @@ def _finisci_profili(fig, axs, titolo):
     axs[0].legend(fontsize=7, loc="lower right")
     axs[1].axhline(0, color="k", lw=0.6)
     axs[2].axhline(0, color="k", lw=0.6)
-    fig.suptitle(titolo + "\n(linea continua: tronco e ramo 1; tratteggio: ramo 2)", fontsize=10)
+    fig.suptitle(titolo, fontsize=10)
     fig.tight_layout()
 
 
 # ======================================================================= mappa ventola
-def grafico_mappa_ventola(un, pl, arie, ambiente_rif, N_req, N_lim, titolo, percorso, formati):
+def grafico_mappa_ventola(un, arie, ambiente_rif, N_req, N_lim, titolo, percorso, formati):
     v = un.ventola
     aria0 = arie[ambiente_rif]
     fig, ax = plt.subplots(figsize=(8, 5.5))
@@ -110,11 +109,11 @@ def grafico_mappa_ventola(un, pl, arie, ambiente_rif, N_req, N_lim, titolo, perc
         Ns = np.linspace(0.15, 1.0, 14) * N_lim
         pts = []
         for N in Ns:
-            sol, b = _solve(un, aria, pl, N)
+            sol, b = _solve(un, aria, N)
             pts.append((sol["Q"] * 1000, b["dp_ventola"]))
         pts = np.array(pts)
         ax.plot(pts[:, 0], pts[:, 1], "-o", ms=2.5, color=COLORI[k % 8], label=f"curva del sistema, {nome}")
-    sol, b = _solve(un, aria0, pl, N_req)
+    sol, b = _solve(un, aria0, N_req)
     ax.plot(sol["Q"] * 1000, b["dp_ventola"], "*", ms=14, color="#c92a2a", label="punto di progetto", zorder=5)
     ax.set_xlabel("portata Q (L/s)")
     ax.set_ylabel("salto di pressione totale utile della ventola (Pa)")
@@ -125,14 +124,14 @@ def grafico_mappa_ventola(un, pl, arie, ambiente_rif, N_req, N_lim, titolo, perc
 
 
 # ======================================================================= spinta / potenza
-def grafico_spinta_giri(un, pl, arie, motore, cfg, N_req, N_lim, F_req, titolo, percorso, formati):
+def grafico_spinta_giri(un, arie, motore, cfg, N_req, N_lim, F_req, titolo, percorso, formati):
     fig, axs = plt.subplots(1, 3, figsize=(13, 4.3))
     Ns = np.linspace(0.1, 1.0, 25) * N_lim
     V_bus = cfg["elettrico"]["tensione_bus_V"]
     for k, (nome, aria) in enumerate(arie.items()):
         F, dp, P, FP = [], [], [], []
         for N in Ns:
-            sol, b = _solve(un, aria, pl, N)
+            sol, b = _solve(un, aria, N)
             st = b["stato_ventola"]
             mp = motore.punto(st["coppia"], N, V_bus, cfg["elementi"]["rendimento_esc"])
             F.append(b["spinta"]); dp.append(b["dp_ventola"]); P.append(mp["P_el"])
@@ -224,30 +223,6 @@ def grafico_ingestione(ing, cfg, titolo, percorso, formati):
     return _salva(fig, percorso, formati)
 
 
-def grafico_valvola(un, pl, aria, N, cfg, titolo, percorso, formati):
-    valv = [e.nome for r in un.rami for e in r.elementi if isinstance(e, R.Valvola)]
-    if not valv:
-        return []
-    ap = np.linspace(0.1, 1.0, 19)
-    Q1, Q2, M, F = [], [], [], []
-    for a in ap:
-        ctx = {"aperture": {valv[0]: a}}
-        sol, b = _solve(un, aria, pl, N, ctx)
-        Q1.append(sol["Q_rami"][0] * 1000); Q2.append(sol["Q_rami"][1] * 1000)
-        M.append(np.linalg.norm(b["momento"])); F.append(b["spinta"])
-    fig, axs = plt.subplots(1, 2, figsize=(11, 4))
-    axs[0].plot(ap * 100, Q1, label="ramo con valvola"); axs[0].plot(ap * 100, Q2, label="ramo libero")
-    axs[0].set_xlabel("apertura della valvola (%)"); axs[0].set_ylabel("portata del ramo (L/s)"); axs[0].legend()
-    axs[1].plot(ap * 100, M, color="#ae3ec9", label="momento sul baricentro (N·m)")
-    ax2 = axs[1].twinx()
-    ax2.plot(ap * 100, F, color="#2b8a3e", label="spinta (N)")
-    axs[1].set_xlabel("apertura della valvola (%)"); axs[1].set_ylabel("momento (N·m)", color="#ae3ec9")
-    ax2.set_ylabel("spinta (N)", color="#2b8a3e")
-    fig.suptitle(titolo + "\nparzializzazione di un ramo della Y: momento per desaturare le ruote")
-    fig.tight_layout()
-    return _salva(fig, percorso, formati)
-
-
 # ======================================================================= viste del layout
 def _rett_proiettato(p, q, r, piano):
     a, b = piano
@@ -282,7 +257,14 @@ def grafico_viste(gm, cfg, titolo, percorso, formati):
             mn, mx = box
             ax.add_patch(Rectangle((mn[piano[0]], mn[piano[1]]), mx[piano[0]] - mn[piano[0]], mx[piano[1]] - mn[piano[1]],
                                    fill=True, alpha=0.18, color="#f59f00", lw=0.8))
+        for mn, mx in lay.tacche:
+            ax.add_patch(Rectangle((mn[piano[0]], mn[piano[1]]), mx[piano[0]] - mn[piano[0]], mx[piano[1]] - mn[piano[1]],
+                                   fill=False, hatch="////", lw=0.4, color="#868e96"))
         for u in lay.unita:
+            for p, q, r, _ in u.canali:
+                poly = _rett_proiettato(p, q, r, piano)
+                if poly is not None:
+                    ax.add_patch(Polygon(poly, closed=True, fill=False, lw=0.8, ls="--", color=COLORI[u.asse]))
             for p, q, r, _ in tubi_unita(u, td):
                 poly = _rett_proiettato(p, q, r, piano)
                 c = COLORI[u.asse]
@@ -310,8 +292,9 @@ def grafico_viste(gm, cfg, titolo, percorso, formati):
     ax3.set_box_aspect((1, 1, 1))
     ax3.set_xlabel("X"); ax3.set_ylabel("Y"); ax3.set_zlabel("Z")
     ax3.set_title("vista 3D (blu X, arancio Y, verde Z; giallo: componenti)", fontsize=9)
+    extra = "; tratteggio: volumetti tolti ai vertici" if lay.tacche else ""
     fig.suptitle(titolo + f"\nD = {gm['D']:.0f} mm — libero dopo i componenti {gm['frazione_libera_dopo']:.0%}, "
-                 f"condotti {gm['frazione_condotti']:.0%} del volume interno; grigio: moduli riservati")
+                 f"condotti {gm['frazione_condotti']:.0%} del volume interno; grigio: moduli riservati{extra}")
     fig.tight_layout()
     return _salva(fig, percorso, formati)
 
@@ -406,7 +389,7 @@ def confronto(risultati, cfg, cartella, formati):
     for a in axs:
         a.set_xlabel("diametro del condotto alla ventola D (mm)")
     axs[0].legend(fontsize=7)
-    fig.suptitle("Sensibilità al diametro (per le Y6: la migliore variante geometrica per diametro)")
+    fig.suptitle("Sensibilità al diametro (con più varianti geometriche: la migliore per diametro)")
     fig.tight_layout()
     out += _salva(fig, os.path.join(cartella, "04_sensibilita_diametro"), formati)
     # perdite a confronto (per asse)
@@ -522,7 +505,7 @@ def confronto(risultati, cfg, cartella, formati):
         un = copy.deepcopy(c0["unita_rete"])
         F = []
         for p in p_lista:
-            _, b = _solve(un, crea_aria("x", p, T0), c0["plenum"], c0["N_req"])
+            _, b = _solve(un, crea_aria("x", p, T0), c0["N_req"])
             F.append(b["spinta"] / c0["F_unita"])
         ax.plot(p_lista / 100, F, color=col[r["scenario"]["id"]], label=r["scenario"]["id"])
     ax.axvline(825, color="#adb5bd", ls="--"); ax.text(826, ax.get_ylim()[0], " cabina 825 mbar", fontsize=7)
@@ -530,4 +513,56 @@ def confronto(risultati, cfg, cartella, formati):
     ax.set_title("Effetto dell'ambiente: a giri fissi la spinta segue la densità")
     ax.legend(fontsize=7)
     out += _salva(fig, os.path.join(cartella, "11_effetto_ambiente"), formati)
+    out += grafico_massa(ott, cfg, os.path.join(cartella, "12_bilancio_massa"), formati)
     return out
+
+
+# ======================================================================= massa
+COL_MASSA = {"componenti fissi": "#ced4da", "telaio e guscio": "#1f5bd8", "condotti e supporti": "#e8590c",
+             "propulsione (motori, ESC, cavi)": "#2b8a3e"}
+
+
+def grafico_massa(ott, cfg, percorso, formati):
+    """Massa totale stimata per scenario, divisa per gruppi, con obiettivo e massima."""
+    if not ott:
+        return []
+    mis = cfg["missione"]
+    fig, axs = plt.subplots(1, 2, figsize=(14, 5), gridspec_kw={"width_ratios": [1, 1.25]})
+    ax = axs[0]
+    nomi = [r["scenario"]["id"] for r in ott]
+    for i, r in enumerate(ott):
+        mb = r["ottimo"]["completo"]["massa"]
+        b0 = 0.0
+        for g, c in COL_MASSA.items():
+            v = mb["gruppi"][g]
+            ax.bar(i, v, bottom=b0, color=c, label=g if i == 0 else None, edgecolor="white")
+            if v > 0.12:
+                ax.text(i, b0 + v / 2, f"{v:.2f}", ha="center", va="center", fontsize=7)
+            b0 += v
+        ax.text(i, b0 + 0.04, f"{b0:.2f} kg", ha="center", fontsize=8, fontweight="bold")
+    ax.axhline(mis["massa_obiettivo_kg"], color="#2f9e44", ls="--", lw=1,
+               label=f"obiettivo {mis['massa_obiettivo_kg']:.1f} kg")
+    ax.axhline(mis["massa_massima_kg"], color="#c92a2a", ls="--", lw=1,
+               label=f"massima ammessa {mis['massa_massima_kg']:.1f} kg")
+    ax.set_xticks(range(len(ott)))
+    ax.set_xticklabels(nomi, fontsize=7, rotation=15)
+    ax.set_ylabel("massa stimata del cubo (kg)")
+    ax.set_ylim(0, max(ax.get_ylim()[1], mis["massa_massima_kg"]) * 1.3)
+    ax.set_title("Massa totale stimata (progetto ottimo di ogni scenario)")
+    ax.legend(fontsize=7, loc="upper left", ncol=3)
+    # dettaglio delle voci che dipendono dalla configurazione
+    ax = axs[1]
+    voci = [k for k in ott[0]["ottimo"]["completo"]["massa"]["voci"] if k != "componenti fissi"]
+    w = 0.8 / len(ott)
+    for i, r in enumerate(ott):
+        mb = r["ottimo"]["completo"]["massa"]["voci"]
+        ax.barh(np.arange(len(voci)) + i * w, [mb[k] * 1000 for k in voci], w, color=COLORI[i % 8],
+                label=r["scenario"]["id"])
+    ax.set_yticks(np.arange(len(voci)) + 0.4 - w / 2)
+    ax.set_yticklabels(voci, fontsize=7)
+    ax.invert_yaxis()
+    ax.set_xlabel("massa (g)")
+    ax.set_title("Voci che cambiano con la configurazione (stime parametriche: TELAIO in INPUT.py)")
+    ax.legend(fontsize=7)
+    fig.tight_layout()
+    return _salva(fig, percorso, formati)

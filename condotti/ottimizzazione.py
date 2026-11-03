@@ -30,8 +30,6 @@ def varianti(sc):
     out, visti = [], set()
     for comb in itertools.product(*[vg[k] for k in chiavi]):
         v = dict(zip(chiavi, comb))
-        if v.get("forma_y") == "piatta" and "raggio_giunzione_frazione" in v:
-            v.pop("raggio_giunzione_frazione")      # nella Y piatta la giunzione sta sull'asse
         chiave = tuple(sorted(v.items()))
         if chiave not in visti:
             visti.add(chiave)
@@ -47,7 +45,7 @@ def migliori_elementi(gm, sc, cfg, tipi, motori, sigmas, log=None):
     for sigma in sigmas:
         if sc.get("reversibile") and sigma != 1.0:
             continue                         # condotto simmetrico: niente Venturi
-        lay_a = genera_layout(sc2, D, sigma, cfg, gm["layout"].parametri.get("segni_giunzione"))
+        lay_a = genera_layout(sc2, D, sigma, cfg)
         for tipo in tipi.values():
             for mot in motori.values():
                 if (mot.diametro_mm + 2 * cfg["elementi"]["spessore_mozzo_mm"]) / D > 0.7:
@@ -73,11 +71,19 @@ def ottimizza_scenario(sc, cfg, log=print):
     motori = libreria_motori(cfg["motori"])
     ott = cfg["ottimizzazione"]
     progetti, geometrie = [], []
+    xi = {}                                      # per variante: massimo D con soluzione ammissibile (solo informativo)
     for var in varianti(sc):
-        for D in ott["diametri_mm"]:
+        xi[_txt_var(var) or "base"] = None
+        for D in sorted(ott["diametri_mm"]):
             gm = V.valuta_geometria(sc, float(D), cfg, var)
             amm = V.geometria_ammissibile(gm)
             geometrie.append(gm)
+            if not amm or not gm["componenti_tutti"]:
+                # ingombro: cresce con D, quindi nessuna soluzione ammissibile per i D successivi
+                # (con questa variante). Motore, Mach e massa NON attivano questo stop.
+                log(f"   D = {D:>4} mm {_txt_var(var)}: spazio/geometria non ammissibile; "
+                    f"diametri successivi di questa variante non analizzati")
+                break
             rec = {"scenario": sc["id"], "D": float(D), "variante": var, "geometria": gm,
                    "geometria_ammissibile": amm, "completo": None}
             if amm:
@@ -91,9 +97,11 @@ def ottimizza_scenario(sc, cfg, log=print):
                         rec["layout_aero"] = lay_a
             progetti.append(rec)
             c = rec["completo"]
-            stato = ("non ammissibile (geometria)" if not amm else
-                     "spinta non raggiunta" if c is None else
-                     f"punteggio {c['punteggio_totale']:.3f}" + ("" if c["ammissibile"] else " con violazioni"))
+            ok = bool(c and c["ammissibile"])
+            if ok:
+                xi[_txt_var(var) or "base"] = float(D)
+            stato = ("spinta non raggiunta" if c is None else
+                     f"punteggio {c['punteggio_totale']:.3f}" + ("" if ok else " con violazioni"))
             log(f"   D = {D:>4} mm {_txt_var(var)}: {stato}")
     validi = [p for p in progetti if p["completo"] and p["completo"]["ammissibile"]]
     if validi:
@@ -103,7 +111,9 @@ def ottimizza_scenario(sc, cfg, log=print):
     log(f"   -> ottimo: D = {ottimo['D']:.0f} mm {_txt_var(ottimo['variante'])}"
         f"{'' if ottimo['completo'] and ottimo['completo']['ammissibile'] else '  (NON AMMISSIBILE)'}"
         f"   [{time.time() - t0:.0f} s]")
-    return {"scenario": sc, "progetti": progetti, "ottimo": ottimo}
+    log("   massimo diametro ammissibile per variante (Xi): " +
+        "; ".join(f"{k} -> {'nessuno' if v is None else f'{v:.0f} mm'}" for k, v in xi.items()))
+    return {"scenario": sc, "progetti": progetti, "ottimo": ottimo, "xi": xi}
 
 
 def _meno_peggio(progetti, sc, cfg, tipi, motori, log):

@@ -1,4 +1,4 @@
-"""Lettura di input.py e database_scenari.py, grandezze derivate."""
+"""Lettura di INPUT.py (dati e scenari), controlli, grandezze derivate."""
 import importlib.util
 import hashlib
 import json
@@ -15,9 +15,8 @@ def _carica_modulo(percorso, nome):
     return mod
 
 
-def carica(percorso_input, percorso_database):
+def carica(percorso_input):
     inp = _carica_modulo(percorso_input, "input_utente")
-    db = _carica_modulo(percorso_database, "database_scenari")
     cfg = {
         "esecuzione": dict(inp.ESECUZIONE),
         "missione": dict(inp.MISSIONE),
@@ -29,7 +28,9 @@ def carica(percorso_input, percorso_database):
         "faccia_sportellino": tuple(inp.FACCIA_SPORTELLINO),
         "faccia_libera": tuple(inp.FACCIA_LIBERA),
         "componenti": dict(inp.COMPONENTI),
+        "masse_fisse": dict(inp.MASSE_FISSE),
         "esc_4in1_mm": tuple(inp.ESC_4IN1_MM),
+        "telaio": dict(inp.TELAIO),
         "elementi": dict(inp.ELEMENTI),
         "tipi_ventola": dict(inp.TIPI_VENTOLA),
         "motori": dict(inp.MOTORI),
@@ -42,20 +43,21 @@ def carica(percorso_input, percorso_database):
         "ottimizzazione": dict(inp.OTTIMIZZAZIONE),
         "realizzabilita": dict(inp.REALIZZABILITA),
     }
-    scenari = list(db.SCENARI)
-    sel = cfg["esecuzione"]["scenari"]
-    if sel != "tutti":
-        scenari = [s for s in scenari if s["id"] in sel]
+    scenari = [dict(s) for s in inp.SCENARI if s.get("attivo", True)]
     _verifica(cfg, scenari)
     # grandezze derivate
     m = cfg["missione"]
     if m["spinta_per_asse_N"] is None:
         a_res = m["disturbo_residuo_g"] * 9.81
         a_tr = 4 * m["distanza_traslazione_m"] / m["tempo_traslazione_s"] ** 2
-        m["spinta_per_asse_N"] = m["margine_spinta"] * m["massa_cubo_kg"] * (a_res + a_tr)
+        m["spinta_per_asse_N"] = m["margine_spinta"] * m["massa_per_spinta_kg"] * (a_res + a_tr)
         m["origine_spinta"] = "k_m · m · (n g + 4 d / t²), come in Propulsione_dimensionamento.xlsx"
     else:
-        m["origine_spinta"] = "imposta in input.py"
+        m["origine_spinta"] = "imposta in INPUT.py"
+    # la spinta richiesta è proporzionale alla massa: serve per ricontrollarla con la massa stimata
+    m["spinta_per_kg_N"] = m["spinta_per_asse_N"] / m["massa_per_spinta_kg"]
+    if m.get("massa_massima_kg") is None:
+        m["massa_massima_kg"] = m["massa_per_spinta_kg"]
     cfg["arie"] = {k: crea_aria(k, v["p"], v["T"]) for k, v in cfg["ambienti"].items()}
     cfg["aria_progetto"] = cfg["arie"][cfg["ambiente_progetto"]]
     return cfg, scenari, inp
@@ -70,15 +72,29 @@ def _verifica(cfg, scenari):
         errori.append("porosità della griglia d'ingresso fuori da (0, 1)")
     if cfg["ambiente_progetto"] not in cfg["ambienti"]:
         errori.append("AMBIENTE_PROGETTO non è tra gli AMBIENTI")
+    if cfg["materiale_condotto"] not in cfg["materiali"]:
+        errori.append("MATERIALE_CONDOTTO non è tra i MATERIALI")
+    if cfg["telaio"]["materiale_guscio"] not in cfg["materiali"]:
+        errori.append("TELAIO['materiale_guscio'] non è tra i MATERIALI")
+    m = cfg["missione"]
+    if m.get("massa_massima_kg") is not None and m["massa_massima_kg"] <= m["massa_obiettivo_kg"]:
+        errori.append("massa_massima_kg deve essere maggiore di massa_obiettivo_kg")
+    pesi = cfg["ottimizzazione"]["pesi"]
+    noti = {"spazio", "perdite", "semplicita", "robustezza", "dinamica", "massa"}
+    if set(pesi) - noti:
+        errori.append(f"criteri sconosciuti nei pesi: {sorted(set(pesi) - noti)} (ammessi: {sorted(noti)})")
     ids = [s["id"] for s in scenari]
     if len(ids) != len(set(ids)):
-        errori.append("id di scenario duplicati nel database")
+        errori.append("id di scenario duplicati in SCENARI")
+    from .scenari import GENERATORI
     for s in scenari:
         for k in ("id", "nome", "topologia", "descrizione"):
             if k not in s:
                 errori.append(f"scenario senza campo '{k}'")
+        if s.get("topologia") not in GENERATORI:
+            errori.append(f"{s.get('id')}: topologia '{s.get('topologia')}' sconosciuta (ammesse: {list(GENERATORI)})")
     if not scenari:
-        errori.append("nessuno scenario selezionato")
+        errori.append("nessuno scenario attivo in SCENARI")
     if errori:
         raise ValueError("Errori in input:\n - " + "\n - ".join(errori))
 

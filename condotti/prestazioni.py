@@ -1,7 +1,7 @@
 """Autorità di controllo, tolleranza ai guasti e indice d'ingestione.
 
-Allocazione: ogni 'modo' di attuazione (una ventola, eventualmente con una
-valvola parzializzata) produce alla massima spinta un vettore di forza e
+Allocazione: ogni 'modo' di attuazione (una ventola, o il verso inverso di
+una reversibile) produce alla massima spinta un vettore di forza e
 momento w_k (6 componenti).  Con comandi 0 <= u_k <= 1 e, per ogni ventola,
 somma dei suoi modi <= 1, si cerca con programmazione lineare la massima
 forza pura (o il massimo momento puro) in una direzione.  Le ventole
@@ -15,7 +15,7 @@ più vicino, e la velocità locale del getto.
                semi-larghezza b = D/2 + 0,11 x
   presa a filo parete: pozzo emisferico, v = Q / (2 pi r^2), attenuato
                (1 + cos gamma)/2 per i punti di lato o dietro la faccia.
-Soglie (input.py): < 0,05 trascurabile, > 0,20 probabile ingestione.
+Soglie (INPUT.py): < 0,05 trascurabile, > 0,20 probabile ingestione.
 """
 import itertools
 import math

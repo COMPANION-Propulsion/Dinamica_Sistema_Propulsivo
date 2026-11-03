@@ -117,36 +117,6 @@ def k_curva(R_su_D, angolo_deg, Re):
     return A1 * B1 * k_re, avvisi
 
 
-# --------------------------------------------------------------- giunzione a Y
-def k_diramazione(v_ramo, v_tronco, alfa_deg):
-    """Diramazione divergente, perdita verso un ramo [IDL diagr. 7-17].
-
-    K riferito alla velocità nel TRONCO (prima della biforcazione):
-    K = A' [1 + (w_r/w_t)^2 - 2 (w_r/w_t) cos(alfa)], A' = 1 per
-    w_r/w_t <= 0.8, 0.9 altrimenti.  alfa = angolo tra asse del ramo e
-    asse del tronco.
-    """
-    if v_tronco <= 0:
-        return 0.0
-    r = v_ramo / v_tronco
-    A = 1.0 if r <= 0.8 else 0.9
-    return max(A * (1 + r * r - 2 * r * math.cos(math.radians(alfa_deg))), 0.0)
-
-
-# --------------------------------------------------------------- valvola
-def k_valvola(apertura, k_aperta=0.2):
-    """Valvola a parzializzazione (otturatore/flap) modellata come orifizio.
-
-    K riferito alla velocità nel ramo a valle: K = (1/(Cc a) - 1)^2 + k_aperta,
-    con a = area aperta / area del ramo e Cc = 0.61 + 0.39 a^3 (coefficiente
-    di contrazione di Weisbach).  k_aperta tiene conto dell'ingombro del
-    meccanismo quando la valvola è tutta aperta.
-    """
-    a = min(max(apertura, 1e-3), 1.0)
-    Cc = 0.61 + 0.39 * a ** 3
-    return (1.0 / (Cc * a) - 1.0) ** 2 + k_aperta
-
-
 # --------------------------------------------------------------- ugello / diffusore
 _ANG_GIB = np.array([4, 6, 8, 10, 15, 20, 30, 45, 60, 180])
 _PHI_GIB = np.array([0.14, 0.13, 0.135, 0.16, 0.27, 0.43, 0.81, 1.0, 1.05, 1.0])
@@ -196,7 +166,7 @@ def k_effetto_sistema_curva_monte(R_su_D, distanza_su_D):
 
 
 def k_effetto_sistema_valle(distanza_su_D, con_statore):
-    """Curva o giunzione a valle della ventola a meno di 2,5 D.
+    """Curva a valle della ventola a meno di 2,5 D.
 
     Senza statore il flusso esce con vortice e la perdita aumenta.
     Valori indicativi (AMCA 201): 0,3 senza statore, 0,1 con statore.

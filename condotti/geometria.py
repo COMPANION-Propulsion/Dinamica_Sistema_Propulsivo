@@ -8,6 +8,8 @@ Unità: millimetri.  Origine nel centro del cubo.
 Lo spazio interno è discretizzato a voxel.  I condotti sono tubi (capsule)
 lungo la polilinea dell'asse con raggio esterno = D/2 + parete: lungo le
 curve la capsula copre un po' più del tubo vero (stima prudente).
+Per le configurazioni con volumetti d'angolo, questi sono prismi tolti al
+volume interno (occupati e non usabili per i componenti).
 """
 from dataclasses import dataclass, field
 import itertools
@@ -52,12 +54,10 @@ class UnitaGeom:
     tronco: Percorso
     rami: list                   # lista di Percorso (vuota se non si divide)
     s_ventola: float             # mm dall'imbocco lungo il tronco
-    ingresso: dict               # {"pos", "normale", "D"} o None (plenum)
+    ingresso: dict               # {"pos", "normale", "D"}
     uscite: list                 # [{"pos", "getto", "D"}]
-    solidi: list = field(default_factory=list)     # box extra (min, max) mm
-    valvole: list = field(default_factory=list)    # [{"ramo": i, "nome": str}]
+    canali: list = field(default_factory=list)     # [(p, q, raggio_esterno, nome)] mm: fori senza ventola
     reversibile: bool = False
-    da_plenum: bool = False
     statore: bool = True
 
 
@@ -67,7 +67,7 @@ class Layout:
     L: float
     parete: float
     unita: list
-    plenum: dict = None
+    tacche: list = field(default_factory=list)     # [(min, max)] mm: prismi tolti agli spigoli
     avvisi: list = field(default_factory=list)
     parametri: dict = field(default_factory=dict)
 
@@ -99,8 +99,8 @@ def dist_segmenti(p1, q1, p2, q2):
     return float(np.linalg.norm((p1 + d1 * s) - (p2 + d2 * t)))
 
 
-def tubi_unita(u, parete_condotto):
-    """Lista di capsule (p, q, raggio_esterno, nome) di un'unità."""
+def tubi_unita(u, parete_condotto, con_canali=False):
+    """Lista di capsule (p, q, raggio_esterno, nome) di un'unità (con i fori di vertice a richiesta)."""
     out = []
     for perc in [u.tronco] + list(u.rami):
         P_ = perc.punti
@@ -110,6 +110,8 @@ def tubi_unita(u, parete_condotto):
             if perc.D_fine and i == n - 1:
                 D = max(perc.D, perc.D_fine)
             out.append((P_[i], P_[i + 1], D / 2 + parete_condotto, f"{u.nome}/{perc.nome}"))
+    if con_canali:
+        out += [(p, q, r, f"{u.nome}/{nome}") for p, q, r, nome in u.canali]
     return out
 
 
@@ -138,7 +140,7 @@ def gioco_minimo(layout, parete_condotto):
     """Gioco minimo tra tubi di unità diverse (mm, negativo = intersezione)."""
     tubi, chi = [], []
     for k, u in enumerate(layout.unita):
-        for t in tubi_unita(u, parete_condotto):
+        for t in tubi_unita(u, parete_condotto, con_canali=True):
             tubi.append(t)
             chi.append(k)
     n = len(tubi)
@@ -210,7 +212,7 @@ class Griglia3D:
 
 
 # codici di occupazione
-COD_CONDOTTI, COD_RISERVATO, COD_EXTRA, COD_COMP = 1, 2, 3, 4
+COD_CONDOTTI, COD_RISERVATO, COD_EXTRA, COD_COMP = 1, 2, 3, 4      # EXTRA: tacche e fori di vertice
 
 
 # =========================================================================

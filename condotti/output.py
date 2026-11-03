@@ -1,7 +1,7 @@
 """Cartelle di output: una per esecuzione, mai sovrascritte, sempre riconoscibili.
 
 Nome:  AAAAMMGG-HHMMSS_<etichetta>_<impronta degli input>
-  etichetta  testo libero da input.py, oppure automatica (spinta, lato, ambiente, scenari)
+  etichetta  testo libero da INPUT.py, oppure automatica (spinta, lato, ambiente, scenari)
   impronta   8 caratteri calcolati dagli input: stessa impronta = stessi dati
 Il file registro_esecuzioni.csv nella cartella principale elenca tutte le
 esecuzioni con data, cartella, impronta e scenario vincente.
@@ -32,9 +32,8 @@ def crea_cartella(cfg, scenari, impronta, base):
     return percorso
 
 
-def copia_input(percorso, file_input, file_database):
-    shutil.copy(file_input, os.path.join(percorso, "input_usato.py"))
-    shutil.copy(file_database, os.path.join(percorso, "database_usato.py"))
+def copia_input(percorso, file_input):
+    shutil.copy(file_input, os.path.join(percorso, "INPUT_usato.py"))
 
 
 def registra(base, riga):

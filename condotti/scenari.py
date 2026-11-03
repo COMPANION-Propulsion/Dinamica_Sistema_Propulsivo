@@ -1,6 +1,6 @@
 """Generatori parametrici delle disposizioni dei condotti.
 
-Ogni generatore riceve: il dizionario dello scenario (dal database), il
+Ogni generatore riceve: il dizionario dello scenario (da INPUT.py), il
 diametro del condotto alla ventola D [mm], il rapporto d'area dell'ugello
 sigma e la configurazione generale; restituisce un Layout.
 
@@ -10,11 +10,10 @@ Le coppie diagonali D1 = {(+,+), (-,-)} e D2 = {(+,-), (-,+)} sono
 simmetriche rispetto al centro: due condotti della stessa coppia che
 spingono uguale danno forza pura, senza coppia.
 """
-import itertools
 import math
 import numpy as np
 
-from .geometria import Percorso, UnitaGeom, Layout, dist_segmenti
+from .geometria import Percorso, UnitaGeom, Layout
 
 SEGNI = [(1, 1), (1, -1), (-1, -1), (-1, 1)]
 
@@ -194,136 +193,88 @@ def gen_spigoli_pieni(sc, D, sigma, cfg):
 
 
 # -------------------------------------------------------------------------
-def _profondita_modulo(cfg, A, s_f):
-    """Profondità del modulo riservato dietro la faccia (A, s_f), 0 se non c'è."""
-    for (ax, sg, wu, wv, dep) in cfg["zone_riservate"].values():
-        if ax == A and sg == s_f:
-            return dep
-    return 0.0
+def gen_spigoli_centrati(sc, D, sigma, cfg):
+    """12 condotti dritti centrati sugli spigoli, accorciati e/o spostati; volumetti tolti ai vertici.
 
-
-def gen_y6_plenum(sc, D, sigma, cfg, segni_giunzione=None, diagonali_assi=None):
-    """6 ventole unidirezionali, una per verso, condotto sdoppiato a Y.
-
-    La ventola del verso +X spinge l'aria fuori dalla faccia -X attraverso
-    due ugelli simmetrici rispetto al centro (margini opposti della faccia o
-    angoli opposti se 'ugelli_diagonali').  La giunzione sta sul piano
-    bisettore dei due ugelli, così i due rami sono lunghi uguali.
-    Forma 'spaziale': stelo perpendicolare alla faccia, rami obliqui verso gli ugelli.
-    Forma 'piatta': stelo e rami in uno strato parallelo alla faccia, più profondo
-      del modulo riservato; i rami piegano di 90° solo sotto gli ugelli (giunzione a T).
-    Aspirazione: dal volume interno (plenum), alimentato da una griglia
-    sulla faccia libera (-X).  Le valvole sui rami parzializzano un ugello
-    per creare coppia e desaturare le ruote di reazione.
+    Configurazione di base: ogni spigolo ha un condotto parallelo a sé, tangente alle due facce
+    che lo formano (asse a distanza a = hi - Ro dal centro del lato).  Le tre rette di un vertice
+    si incontrerebbero nel vertice.  Per eliminare l'intersezione:
+      - l'estremità di ogni condotto resta a distanza <= c = a - (2 Ro + g) dal piano del vertice
+        (c è il limite di gioco con i due condotti che arrivano nello stesso vertice);
+      - il volumetto d'angolo, tolto al vertice, comincia dalle estremità dei condotti e arriva
+        alla faccia interna: attraverso di lui i condotti aspirano e soffiano verso l'esterno.
+    Due parametri (sezione 11 di INPUT.py):
+      lunghezza_frazione     lunghezza del condotto / lunghezza massima 2c (1 = arriva al limite)
+      spostamento_frazione   spostamento lungo lo spigolo, in frazione del margine disponibile;
+                             0 = centrato, con i tre piani di simmetria
+    Ogni condotto è spinto nel verso del suo asse; le coppie diagonali (come in S1) danno forza pura.
+    Gli spostamenti sono uguali per tutti gli spigoli nel verso del loro asse: si conserva la simmetria
+    ruotata di 120° attorno alla diagonale.
     """
     L, tw, td, h, Ro, g = _dati_comuni(cfg, D)
-    kappa = sc.get("rapporto_area_rami", 1.0)
-    Db = D * math.sqrt(kappa / 2.0)
-    De = Db * math.sqrt(sigma)
-    Rob = Db / 2 + td
-    Lu = _lung_ugello(Db, sigma, cfg["elementi"]["semiangolo_ugello_deg"])
-    forma = sc.get("forma_y", "spaziale")
-    margine = sc.get("margine_ugello_mm", 4.0)
-    e_off = h - tw - Rob - margine
-    r_j = sc.get("raggio_giunzione_frazione", 0.55) * h
-    d_j0 = sc.get("profondita_giunzione_frazione", 0.45) * h
+    hi = h - tw                               # faccia interna
+    a = hi - Ro                               # asse del condotto: tangente alle due facce dello spigolo
+    c = a - (2 * Ro + g)                      # distanza massima delle estremità dal piano del vertice
+    De = D * math.sqrt(sigma)
+    Lu = _lung_ugello(D, sigma, cfg["elementi"]["semiangolo_ugello_deg"])
     Lf = cfg["elementi"]["lunghezza_ventola_su_D"] * D
-    stelo = sc.get("lunghezza_stelo_su_D", 0.4) * D + Lf + sc.get("distanza_ventola_giunzione_su_D", 1.0) * D
-    Rb = sc.get("raggio_curva_ramo_su_D", 1.0) * Db
-    n_valv = sc.get("valvole_per_unita", 2)
-    unita, avvisi = [], []
-    facce = [(A, s) for A in range(3) for s in (1, -1)]
-    if segni_giunzione is None:
-        segni_giunzione = [1, -1, 1, -1, 1, -1]
-    if diagonali_assi is None:
-        diagonali_assi = [1, 1, 1]
-    for k, (A, s_f) in enumerate(facce):
-        t, w = (A + 2) % 3, (A + 1) % 3
-        if sc.get("ugelli_diagonali", False):
-            dg = diagonali_assi[A]
-            n1, n2 = np.array([e_off, dg * e_off]), np.array([-e_off, -dg * e_off])
-            bis = np.array([-dg * 1.0, 1.0]) / math.sqrt(2)
-        else:
-            n1, n2 = np.array([e_off, 0.0]), np.array([-e_off, 0.0])
-            bis = np.array([0.0, 1.0])
-
-        def P(depth, tw_):
-            p_ = np.zeros(3)
-            p_[A] = s_f * (h - depth)
-            p_[t], p_[w] = tw_[0], tw_[1]
-            return p_
-
-        if forma == "piatta":
-            d_j = max(d_j0, _profondita_modulo(cfg, A, s_f) + Rob + 6.0, Rb + Lu + 5.0)
-            jtw = np.zeros(2)
-            S_in = P(d_j, jtw + segni_giunzione[k] * stelo * bis)
-            J = P(d_j, jtw)
-            rami = []
-            for i, nk in enumerate((n1, n2)):
-                pts = np.array([J, P(d_j, nk), P(0.0, nk)])
-                rami.append(Percorso(f"ramo{i + 1}", pts, [Rb], Db, De, Lu))
-        else:
-            d_j = d_j0
-            jtw = segni_giunzione[k] * r_j * bis
-            ang_ramo = math.degrees(math.atan2(np.linalg.norm(n1 - jtw), max(d_j - (Lu + Rb + 5), 1.0)))
-            d_b = Lu + Rb * math.tan(math.radians(ang_ramo) / 2) + 5.0
-            if d_j <= d_b + 5:
-                avvisi.append(f"faccia {'+' if s_f > 0 else '-'}{'XYZ'[A]}: giunzione troppo vicina alla faccia")
-            S_in, J = P(d_j + stelo, jtw), P(d_j, jtw)
-            rami = []
-            for i, nk in enumerate((n1, n2)):
-                pts = np.array([J, P(d_b, nk), P(0.0, nk)])
-                rami.append(Percorso(f"ramo{i + 1}", pts, [Rb], Db, De, Lu))
-        tronco = Percorso("stelo", np.array([S_in, J]), [], D)
-        valv = [{"ramo": i, "nome": f"valvola{i + 1}"} for i in range(n_valv)]
-        segno = "+" if -s_f > 0 else "-"
-        unita.append(UnitaGeom(
-            nome=f"Y{segno}{'XYZ'[A]}", asse=A, verso=_e(A, -s_f), tronco=tronco, rami=rami,
-            s_ventola=sc.get("lunghezza_stelo_su_D", 0.4) * D,
-            ingresso=None,
-            uscite=[{"pos": rami[0].punti[-1], "getto": _e(A, s_f), "D": De},
-                    {"pos": rami[1].punti[-1], "getto": _e(A, s_f), "D": De}],
-            valvole=valv, da_plenum=True))
-    A_g = sc.get("area_griglia_plenum_mm2", None)
-    lay = Layout(sc["id"], L, tw, unita, avvisi=avvisi,
-                 parametri={"D_ramo_mm": Db, "r_giunzione_mm": r_j, "forma_y": forma})
-    lay.plenum = {"faccia": (0, -1), "pos": np.array([-h, 0.0, 0.0]), "normale": np.array([-1.0, 0, 0]),
-                  "area_mm2": A_g}
-    return lay
-
-
-def gen_y6_ottimizza_segni(sc, D, sigma, cfg, parete_condotto):
-    """Sceglie lato della giunzione (e diagonale, se ugelli diagonali) col gioco migliore."""
-    from .geometria import gioco_minimo
-    migliore, gm, scelta = None, -math.inf, None
-    diag_opz = list(itertools.product([1, -1], repeat=3)) if sc.get("ugelli_diagonali", False) else [(1, 1, 1)]
-    for dg in diag_opz:
-        for tre in itertools.product([1, -1], repeat=3):
-            segni = [tre[0], -tre[0], tre[1], -tre[1], tre[2], -tre[2]]
-            lay = gen_y6_plenum(sc, D, sigma, cfg, segni, list(dg))
-            g_, _ = gioco_minimo(lay, parete_condotto)
-            if g_ > gm:
-                gm, migliore, scelta = g_, lay, (segni, list(dg))
-    migliore.parametri["segni_giunzione"] = scelta
-    return migliore
+    avvisi = []
+    if c <= 0:
+        avvisi.append("IRREALIZZABILE: spigolo troppo piccolo per due condotti con il gioco richiesto")
+        return Layout(sc["id"], L, tw, [], avvisi=avvisi)
+    fr_L = min(max(sc.get("lunghezza_frazione", 0.8), 0.0), 1.0)
+    ell = fr_L * 2 * c
+    # lo spostamento è limitato: il condotto deve restare a cavallo del centro e non superare c
+    margine = min(c - ell / 2, ell / 2)
+    delta = min(max(sc.get("spostamento_frazione", 0.0), -1.0), 1.0) * margine
+    if ell < Lf + Lu + 0.6 * D:
+        avvisi.append(f"IRREALIZZABILE: condotto di {ell:.0f} mm troppo corto per ventola e ugello")
+    s_D1 = sc.get("verso_coppia_D1", -1)
+    frac_v = sc.get("posizione_ventola_frazione", 0.3)
+    s_v = min(max(frac_v * ell - Lf / 2, 0.3 * D), max(ell - Lu - Lf - 0.1 * D, 0.0))
+    unita = []
+    for A in range(3):
+        u, v = (A + 1) % 3, (A + 2) % 3
+        for (su, sv) in SEGNI:
+            s_th = s_D1 if su * sv > 0 else -s_D1
+            c0 = np.zeros(3)
+            c0[u], c0[v] = su * a, sv * a
+            I, O = c0.copy(), c0.copy()
+            I[A] = delta + s_th * ell / 2          # presa: estremità dal lato della spinta
+            O[A] = delta - s_th * ell / 2          # uscita: estremità opposta, il getto va in -s_th
+            nome = f"{'XYZ'[A]}{'+' if su > 0 else '-'}{'+' if sv > 0 else '-'}"
+            unita.append(UnitaGeom(
+                nome=nome, asse=A, verso=_e(A, s_th),
+                tronco=Percorso("tronco", np.array([I, O]), [], D, De, Lu), rami=[], s_ventola=s_v,
+                ingresso={"pos": I, "normale": _e(A, s_th), "D": D},
+                uscite=[{"pos": O, "getto": _e(A, -s_th), "D": De}]))
+    # volumetti d'angolo: da ciascuna estremità alla faccia interna (sul lato di ogni vertice)
+    e_piu, e_meno = ell / 2 + delta, ell / 2 - delta
+    volumetti = []
+    for sx in (1, -1):
+        for sy in (1, -1):
+            for sz in (1, -1):
+                mn, mx = np.zeros(3), np.zeros(3)
+                for j, sg in enumerate((sx, sy, sz)):
+                    e = e_piu if sg > 0 else e_meno
+                    if sg > 0:
+                        mn[j], mx[j] = e, hi
+                    else:
+                        mn[j], mx[j] = -hi, -e
+                volumetti.append((mn, mx))
+    return Layout(sc["id"], L, tw, unita, tacche=volumetti, avvisi=avvisi,
+                  parametri={"lunghezza_condotto_mm": ell, "spostamento_mm": delta, "asse_condotto_mm": a,
+                             "estremita_max_mm": c})
 
 
 GENERATORI = {
     "sfalsati": gen_sfalsati,
     "spigoli_corti": gen_spigoli_corti,
     "spigoli_pieni": gen_spigoli_pieni,
-    "y6_plenum": gen_y6_plenum,
+    "spigoli_centrati": gen_spigoli_centrati,
 }
 
 
-def genera_layout(sc, D, sigma, cfg, segni=None):
-    """Layout dello scenario; per le Y6 'segni' riusa i lati di giunzione già scelti."""
-    topo = sc["topologia"]
-    if topo == "y6_plenum":
-        if segni is not None:
-            lay = gen_y6_plenum(sc, D, sigma, cfg, list(segni[0]), list(segni[1]))
-            lay.parametri["segni_giunzione"] = segni
-            return lay
-        if sc.get("cerca_lato_giunzione", True):
-            return gen_y6_ottimizza_segni(sc, D, sigma, cfg, cfg["geometria"]["parete_condotto_mm"])
-    return GENERATORI[topo](sc, D, sigma, cfg)
+def genera_layout(sc, D, sigma, cfg):
+    """Layout dello scenario (sc già unito alla variante geometrica)."""
+    return GENERATORI[sc["topologia"]](sc, D, sigma, cfg)

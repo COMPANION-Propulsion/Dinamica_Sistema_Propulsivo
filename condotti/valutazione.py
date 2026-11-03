@@ -6,7 +6,8 @@ Catena:
   3 autorità di controllo, guasti, ingestione dei getti
   4 dinamica (salita della spinta, margine di fase, ruote di reazione)
   5 struttura (frequenze, Campbell, instabilità, carichi in g, rigidezza)
-  6 realizzabilità, robustezza, punteggi
+  6 bilancio di massa (telaio, condotti, propulsione, componenti)
+  7 realizzabilità, robustezza, punteggi
 """
 import copy
 import itertools
@@ -19,8 +20,9 @@ from . import prestazioni as PR
 from . import dinamica as DY
 from . import struttura as ST
 from . import realizzabilita as RZ
+from . import massa as MA
 from .scenari import genera_layout
-from .costruttore import costruisci_unita, costruisci_plenum, _segmenti
+from .costruttore import costruisci_unita
 from .realizzabilita import _scala
 
 
@@ -44,24 +46,12 @@ def valuta_geometria(sc, D, cfg, variante=None, colloca_componenti=None):
     for u in lay.unita:
         for p, q, r, _ in G.tubi_unita(u, td):
             gr.capsula(p, q, r, G.COD_CONDOTTI)
-    # servo delle valvole: piccolo box accanto al primo tratto del ramo
-    for u in lay.unita:
-        for vv in u.valvole:
-            perc = u.rami[vv["ramo"]]
-            m = 0.5 * (perc.punti[0] + perc.punti[1])
-            d = perc.punti[1] - perc.punti[0]
-            d = d / max(np.linalg.norm(d), 1e-9)
-            n_ = np.cross(d, np.eye(3)[u.asse])
-            if np.linalg.norm(n_) < 1e-6:
-                n_ = np.cross(d, np.eye(3)[(u.asse + 1) % 3])
-            n_ = n_ / np.linalg.norm(n_)
-            c = m + n_ * (perc.D / 2 + td + 12)
-            gr.box(c - np.array([12, 12, 12]), c + np.array([12, 12, 12]), G.COD_EXTRA)
-    # ingresso dell'aria nel plenum: corridoio libero dietro la griglia
-    if lay.plenum is not None:
-        ax, sg = lay.plenum["faccia"]
-        mn, mx = G.box_dietro_faccia(lay.L, lay.parete, ax, sg, 100, 100, 25)
+    # volumetti d'angolo tolti ai vertici (spigoli centrati)
+    for mn, mx in lay.tacche:
         gr.box(mn, mx, G.COD_EXTRA)
+    for u in lay.unita:
+        for p, q, r, _ in u.canali:
+            gr.capsula(p, q, r, G.COD_EXTRA)
     f_condotti = gr.volume_frazione({G.COD_CONDOTTI})
     f_extra = gr.volume_frazione({G.COD_EXTRA})
     sovrapp = {}
@@ -161,7 +151,7 @@ def _firma(u):
     for perc in [u.tronco] + list(u.rami):
         parti.append((round(float(np.sum(perc.lunghezze())), 1), tuple(round(a, 1) for a in perc.angoli()),
                       round(perc.D, 2)))
-    return (tuple(parti), u.da_plenum, u.reversibile, len(u.rami))
+    return (tuple(parti), u.reversibile)
 
 
 def classi(layout):
@@ -206,17 +196,14 @@ def valuta_aero(lay_aero, cfg, D, sigma, tipo, motore, aria=None, completo=True)
         un, av = costruisci_unita(ug, cfg, tipo, D, sigma, motore)
         if un.ventola.nu > 0.7:
             return None
-        pl = None
-        if lay_aero.plenum is not None:
-            pl, _ = costruisci_plenum(lay_aero, cfg, 0.05)
         N_lim, lim_det = N_limite(un.ventola, motore, cfg, aria)
         n_dir = max(min(cont[k] for k, (ax, sg) in PR.DIREZIONI.items() if ax == ug.asse), 1)
         F_u = F_asse / n_dir
-        N_req = R.N_per_spinta(un, F_u, aria, N_lim, pl, direzione=ug.verso)
+        N_req = R.N_per_spinta(un, F_u, aria, N_lim, direzione=ug.verso)
         if N_req is None:
             return None
         un.imposta_N(N_req)
-        sol = R.risolvi([un], aria, pl)[un.nome]
+        sol = R.risolvi([un], aria)[un.nome]
         b = R.bilancio_unita(un, sol, aria)
         st = b["stato_ventola"]
         omega = N_req * 2 * math.pi / 60
@@ -225,11 +212,11 @@ def valuta_aero(lay_aero, cfg, D, sigma, tipo, motore, aria=None, completo=True)
         U = un.ventola.U(N_req)
         ve = [q / R.area(r.uscita.D) for q, r in zip(sol["Q_rami"], un.rami)]
         frac_perdite = b["P_perdite"] / max(b["P_utile_ventola"], 1e-9)
-        # spinta massima (per l'allocazione) e modi con valvola parzializzata
+        # spinta massima (per l'allocazione) e verso inverso delle reversibili
         modi = []
         if completo:
             for u_ in cl:
-                modi.extend(_modi_unita(u_, cfg, tipo, D, sigma, motore, aria, N_lim, pl, None))
+                modi.extend(_modi_unita(u_, cfg, tipo, D, sigma, motore, aria, N_lim))
         un.imposta_N(N_req)
         out["classi"].append({
             "unita": [u_.nome for u_ in cl], "asse": ug.asse, "n_per_verso": n_dir, "F_unita": F_u,
@@ -243,7 +230,7 @@ def valuta_aero(lay_aero, cfg, D, sigma, tipo, motore, aria=None, completo=True)
             "P_getto": b["P_getto"], "P_utile": b["P_utile_ventola"], "frazione_perdite": frac_perdite,
             "coppia_rotore": st["coppia"], "coppia_corpo": st["coppia_corpo"], "omega": omega,
             "momento_unita": b["momento"], "forza_unita": b["forza"], "modi": modi, "avvisi": av,
-            "unita_rete": un, "plenum": pl})
+            "unita_rete": un})
         Q_stima += sol["Q"]
     # potenza per asse (caso peggiore) e di picco
     P_asse = {}
@@ -258,26 +245,16 @@ def valuta_aero(lay_aero, cfg, D, sigma, tipo, motore, aria=None, completo=True)
     out["ok_motore"] = all(c["ok_tensione"] and c["ok_corrente"] for c in out["classi"])
     out["ok_mach"] = all(c["Mach_punta"] <= cfg["limiti"]["mach_punta_max"] for c in out["classi"])
     out["stallo"] = any(c["stallo"] for c in out["classi"])
-    # accoppiamento del plenum: tre assi insieme
-    out["calo_spinta_3assi"] = _calo_plenum(lay_aero, out, cfg, aria) if completo else 0.0
     return out
 
 
-def _modi_unita(ug, cfg, tipo, D, sigma, motore, aria, N_lim, pl, b_rif):
-    """Vettori forza-momento alla massima spinta (con valvole e verso inverso)."""
+def _modi_unita(ug, cfg, tipo, D, sigma, motore, aria, N_lim):
+    """Vettori forza-momento alla massima spinta (e verso inverso se reversibile)."""
     un, _ = costruisci_unita(ug, cfg, tipo, D, sigma, motore)
     un.imposta_N(N_lim)
-    modi = []
-    sol = R.risolvi([un], aria, pl)[un.nome]
+    sol = R.risolvi([un], aria)[un.nome]
     b = R.bilancio_unita(un, sol, aria)
-    modi.append({"unita": ug.nome, "modo": "pieno", "w": np.concatenate([b["forza"], b["momento"]])})
-    a_min = cfg["elementi"]["apertura_minima_valvola"]
-    for vv in ug.valvole:
-        ctx = {"aperture": {vv["nome"]: a_min}}
-        sol = R.risolvi([un], aria, pl, ctx)[un.nome]
-        b = R.bilancio_unita(un, sol, aria, ctx)
-        modi.append({"unita": ug.nome, "modo": f"{vv['nome']} al {a_min:.0%}",
-                     "w": np.concatenate([b["forza"], b["momento"]])})
+    modi = [{"unita": ug.nome, "modo": "pieno", "w": np.concatenate([b["forza"], b["momento"]])}]
     if ug.reversibile:
         F = -modi[0]["w"][:3]
         r = np.asarray(ug.ingresso["pos"]) / 1000
@@ -285,33 +262,8 @@ def _modi_unita(ug, cfg, tipo, D, sigma, motore, aria, N_lim, pl, b_rif):
     return modi
 
 
-def _calo_plenum(lay, aero, cfg, aria):
-    if lay.plenum is None:
-        return 0.0
-    # una unità per asse, ciascuna al proprio N di progetto
-    scelte = {}
-    for c in aero["classi"]:
-        for nome in c["unita"]:
-            ug = [u for u in lay.unita if u.nome == nome][0]
-            if ug.asse not in scelte:
-                scelte[ug.asse] = (c, nome)
-    reti = []
-    for ax, (c, nome) in scelte.items():
-        un = copy.deepcopy(c["unita_rete"])
-        un.nome = nome
-        un.imposta_N(c["N_req"])
-        reti.append((un, c))
-    pl = aero["classi"][0]["plenum"]
-    sol = R.risolvi([u for u, _ in reti], aria, pl)
-    cali = []
-    for un, c in reti:
-        b = R.bilancio_unita(un, sol[un.nome], aria)
-        cali.append(1 - b["spinta"] / c["F_unita"])
-    return max(cali)
-
-
 # =========================================================================
-# 3-6. Valutazione completa
+# 3-7. Valutazione completa
 # =========================================================================
 def valuta_completo(gm, aero, cfg, sc, tipo, motore, sigma):
     lay = gm["layout"]
@@ -365,7 +317,7 @@ def valuta_completo(gm, aero, cfg, sc, tipo, motore, sigma):
     p_cr = ST.pressione_critica(gm["D"], td, mat)
     un = c0["unita_rete"]
     un.imposta_N(c0["N_lim"])
-    sol = R.risolvi([un], aria, c0["plenum"])[un.nome]
+    sol = R.risolvi([un], aria)[un.nome]
     prf = R.profili_unita(un, sol, aria)
     p_min = min(float(np.min(prf["tronco"]["p"])), *[float(np.min(r["p"])) for r in prf["rami"]])
     un.imposta_N(c0["N_req"])
@@ -373,12 +325,19 @@ def valuta_completo(gm, aero, cfg, sc, tipo, motore, sigma):
     s18 = ST.sforzo_flessione(span, gm["D"], td, M_f, cfg["carichi"]["g_ipergravita"])
     s9 = ST.sforzo_flessione(span, gm["D"], td, M_f, cfg["carichi"]["g_atterraggio_emergenza"])
     EI = ST.rigidezza_telaio(lay, td, mat)
-    m_prop = RZ.massa_propulsione(lay, cfg, motore, gm["D"])
     res.update({"campata_ventola_mm": span, "f1_Hz": f1, "risonanze_campbell": cross, "margine_campbell": marg_c,
                 "p_critica_Pa": p_cr, "suzione_max_Pa": suzione, "margine_instabilita": p_cr / suzione,
                 "sforzo_1_8g_MPa": s18 / 1e6, "sforzo_9g_MPa": s9 / 1e6,
                 "margine_sforzo_9g": mat["sigma_snervamento"] / max(s9, 1.0),
-                "EI_condotti_Nm2": EI, "massa_propulsione_kg": m_prop})
+                "EI_condotti_Nm2": EI})
+    # --- massa
+    mb = MA.bilancio_massa(lay, cfg, motore, gm["D"])
+    m_tot = mb["totale"]
+    mis = cfg["missione"]
+    F_req_m = mis["spinta_per_kg_N"] * m_tot
+    res.update({"massa": mb, "massa_totale_kg": m_tot, "massa_configurazione_kg": mb["dipendente_dalla_configurazione"],
+                "spinta_richiesta_massa_stimata_N": F_req_m,
+                "margine_spinta_massa_stimata": min(forze.values()) / max(F_req_m, 1e-9)})
     # --- punteggi
     car = gm["realizzabilita"]
     s_real, sub_real = RZ.punteggio_realizzabilita(car, cfg)
@@ -388,12 +347,13 @@ def valuta_completo(gm, aero, cfg, sc, tipo, motore, sigma):
         s_spazio *= 0.3
     frac_p = max(c["frazione_perdite"] for c in aero["classi"])
     s_perdite = 0.7 * _scala(aero["P_asse_max"], *ott["scala_potenza_asse_W"]) + 0.3 * (1 - min(frac_p, 1.0))
-    s_rob = 0.6 * _scala(tol, 0.0, 1.0) + 0.3 * _scala(car["servo"], 12, 0) + 0.1 * (0.0 if lay.plenum else 1.0)
+    s_rob = _scala(tol, 0.0, 1.0)
     s_ing = _scala(res["ingestione_peggiore"], lim["indice_ingestione_critico"], lim["indice_ingestione_attenzione"])
     s_din = (0.4 * _scala(t_frenata, *ott["scala_tempo_salita_s"]) + 0.4 * s_ing
              + 0.2 * _scala(t_desat, 30.0, 2.0))
+    s_massa = _scala(m_tot, mis["massa_massima_kg"], mis["massa_obiettivo_kg"])
     punteggi = {"spazio": s_spazio, "perdite": s_perdite, "semplicita": s_real, "robustezza": s_rob,
-                "dinamica": s_din}
+                "dinamica": s_din, "massa": s_massa}
     pesi = ott["pesi"]
     totale = sum(pesi[k] * punteggi[k] for k in pesi) / sum(pesi.values())
     P_ax = max(aero["P_asse_max"], 1e-9)
@@ -423,13 +383,11 @@ def _ingestione(lay, aero, uso, cfg):
             per_unita[nome] = c
     comandi = PR.comandi_combinati(cfg["missione"]["assi_contemporanei_max"])
     risultati = {}
-    pl = lay.plenum
     for cmd in comandi:
         attive = set()
         for verso in cmd:
             attive.update(uso.get(verso, []))
         uscite, prese = [], []
-        Q_plenum = 0.0
         for u in lay.unita:
             if u.nome not in attive:
                 continue
@@ -446,18 +404,12 @@ def _ingestione(lay, aero, uso, cfg):
                     uscite.append({"pos": np.asarray(us["pos"]) / 1000, "getto": np.asarray(us["getto"]),
                                    "D": us["D"] / 1000, "V": c["v_uscita"][min(k, len(c["v_uscita"]) - 1)],
                                    "unita": u.nome})
-            if u.da_plenum:
-                Q_plenum += c["Q"]
-            elif inv:
+            if inv:
                 prese.append({"pos": np.asarray(u.uscite[0]["pos"]) / 1000, "normale": -np.asarray(u.uscite[0]["getto"]),
                               "Q": c["Q"], "D": u.uscite[0]["D"] / 1000, "unita": u.nome})
             else:
                 prese.append({"pos": np.asarray(u.ingresso["pos"]) / 1000, "normale": np.asarray(u.ingresso["normale"]),
                               "Q": c["Q"], "D": u.ingresso["D"] / 1000, "unita": u.nome})
-        if pl is not None and Q_plenum > 0:
-            A_g = aero["classi"][0]["plenum"].A_griglia
-            prese.append({"pos": np.asarray(pl["pos"]) / 1000, "normale": np.asarray(pl["normale"]),
-                          "Q": Q_plenum, "D": math.sqrt(4 * A_g / math.pi), "unita": "plenum"})
         peggiore, coppia = 0.0, None
         for us in uscite:
             for pr in prese:
@@ -476,7 +428,8 @@ def _ingestione(lay, aero, uso, cfg):
 def _violazioni(gm, aero, res, cfg):
     v = []
     if gm["irrealizzabile"]:
-        v.append("geometria irrealizzabile (zone d'estremità oltre il mezzo spigolo)")
+        v.append("geometria irrealizzabile: " + "; ".join(a.replace("IRREALIZZABILE: ", "")
+                                                           for a in gm["layout"].avvisi if "IRREALIZZABILE" in a))
     if gm["gioco_min_mm"] < 0:
         v.append(f"condotti che si intersecano ({gm['gioco_min_mm']:.1f} mm)")
     if gm["sovrapposizioni_zone_cm3"]:
@@ -490,6 +443,9 @@ def _violazioni(gm, aero, res, cfg):
         v.append("motore oltre tensione o corrente")
     if not aero["ok_mach"]:
         v.append("Mach di punta oltre il limite")
+    mis = cfg["missione"]
+    if mis["massa_vincolante"] and res["massa_totale_kg"] > mis["massa_massima_kg"]:
+        v.append(f"massa stimata {res['massa_totale_kg']:.2f} kg oltre la massima ammessa {mis['massa_massima_kg']:.2f} kg")
     return v
 
 
@@ -508,6 +464,15 @@ def avvisi_progetto(gm, aero, res, cfg):
         a.append(f"ingestione critica in {len(res['comandi_critici'])} comandi su più assi")
     if res["ruote"]["quota_ruota"] > 1:
         a.append("le ruote di reazione saturano nella finestra libera")
-    if aero.get("calo_spinta_3assi", 0) > 0.05:
-        a.append(f"plenum condiviso: -{aero['calo_spinta_3assi']:.0%} di spinta con 3 assi")
+    mis = cfg["missione"]
+    m = res["massa_totale_kg"]
+    if m > mis["massa_obiettivo_kg"]:
+        a.append(f"massa stimata {m:.2f} kg: {m - mis['massa_obiettivo_kg']:.2f} kg sopra l'obiettivo di "
+                 f"{mis['massa_obiettivo_kg']:.1f} kg")
+    if res["margine_spinta_massa_stimata"] < 1.0:
+        a.append(f"con la massa stimata servono {res['spinta_richiesta_massa_stimata_N']:.2f} N per asse: "
+                 f"la forza pura disponibile ne copre il {res['margine_spinta_massa_stimata']:.0%}")
+    for x in gm["layout"].avvisi:
+        if "IRREALIZZABILE" not in x and x not in a:
+            a.append(x)
     return a
