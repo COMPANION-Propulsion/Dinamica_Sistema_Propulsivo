@@ -6,7 +6,7 @@ Sezioni, nell'ordine in cui conviene leggerle:
    0  ESECUZIONE        che cosa eseguire e come (veloce / completa)
    1  MISSIONE E MASSA  spinta richiesta, obiettivo di massa (4 kg)
    2  AMBIENTI          aria in cabina e in laboratorio
-   3  CUBO              lato, pareti, moduli fissi dietro le facce
+   3  CUBO              intervallo del lato (il lato ottimo è un RISULTATO), pareti, moduli fissi dietro le facce
    4  COMPONENTI        ingombri e masse di ciò che va dentro il cubo
    5  TELAIO            parametri della stima di massa della struttura
    6  ELEMENTI          griglie, imbocco, ventola, ugello del condotto
@@ -81,7 +81,11 @@ AMBIENTE_PROGETTO = "volo_20C"
 # 3. CUBO
 # =============================================================================
 GEOMETRIA = {
-    "lato_cubo_mm": 320.0,          # [XLS] scelta aperta, come Astrobee
+    # Il lato del cubo NON è un dato: l'analisi lo cerca dentro questo intervallo, per ogni scenario.
+    # Il lato ottimo di ogni scenario compare nel terminale, nell'Excel e nei dati di output.
+    "lato_cubo_min_mm": 280.0,      # limite inferiore dell'intervallo (mm)
+    "lato_cubo_max_mm": 350.0,      # limite superiore (mm)
+    "lato_cubo_passo_mm": 10.0,     # passo: ogni lato in più allunga la run (280-350 con passo 10 = 8 lati)
     "parete_cubo_mm": 3.0,          # SEGNAPOSTO: ingombro della parete (per lo spazio interno)
     "parete_condotto_mm": 1.2,      # SEGNAPOSTO: stampa 3D, >= 0,8 mm per FDM
     "gioco_tra_condotti_mm": 5.0,   # SEGNAPOSTO
@@ -267,7 +271,6 @@ REALIZZABILITA = {
 # Topologie disponibili (generatori in condotti/scenari.py):
 #   sfalsati           condotti dritti lungo tutto il lato, sfalsamento ciclico
 #   spigoli_corti      condotti lunghi mezzo spigolo, presa laterale a metà spigolo
-#   spigoli_pieni      condotti lungo tutto lo spigolo con scalino vicino ai vertici
 #   spigoli_centrati   condotti sugli spigoli, accorciati e/o spostati, volumetti tolti ai vertici
 # "varianti_geometria": liste di valori da provare tutti (prodotto cartesiano) per trovare l'ottimo.
 # Per aggiungere uno scenario: copiare un blocco, cambiare id e parametri.
@@ -306,22 +309,7 @@ SCENARI = [
         "distanza_ventola_da_curva_su_D": 1.0,
     },
     {
-        "id": "S3_SPIGOLI_PIENI_12",
-        "attivo": True,
-        "nome": "12 condotti sugli spigoli per tutta la lunghezza, scalino ai vertici",
-        "topologia": "spigoli_pieni",
-        "origine": "Proposta dell'utente: lo stesso del modello ma sugli spigoli",
-        "descrizione": ("12 condotti a filo dei due lati dello spigolo nel tratto centrale; vicino ai vertici rientrano "
-                        "con uno scalino a S per incrociarsi senza toccarsi. Ugelli inclinati verso il centro della "
-                        "faccia (opzione) per allontanare i getti dalle prese dei condotti vicini."),
-        "pregi_attesi": "Massimo arretramento verso l'esterno nel tratto centrale; nessuna parte mobile.",
-        "difetti_attesi": "Quattro curve per condotto; zona d'estremità lunga; prese e ugelli vicini nei vertici.",
-        "angolo_scalino_deg": 30.0,
-        "raggio_scalino_su_D": 1.5,
-        "angolo_deflessione_deg": 10.0,
-    },
-    {
-        "id": "S4_REVERSIBILI_6",
+        "id": "S3_REVERSIBILI_6",
         "attivo": True,
         "nome": "6 ventole reversibili a coppie sfalsate (dal file Excel)",
         "topologia": "sfalsati",
@@ -334,7 +322,7 @@ SCENARI = [
         "verso_coppia_D1": -1,
     },
     {
-        "id": "S5_SPIGOLI_CENTRATI_12",
+        "id": "S4_SPIGOLI_CENTRATI_12",
         "attivo": True,
         "nome": "12 condotti centrati sugli spigoli, accorciati e spostati, volumetti tolti ai vertici",
         "topologia": "spigoli_centrati",

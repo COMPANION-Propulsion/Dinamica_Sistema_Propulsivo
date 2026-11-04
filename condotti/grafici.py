@@ -346,7 +346,7 @@ def confronto(risultati, cfg, cartella, formati):
     for r in risultati:
         sid = r["scenario"]["id"]
         for p in r["progetti"]:
-            if not p.get("completo"):
+            if not p.get("completo") or p["L"] != r["ottimo"]["L"]:
                 continue
             x = p["geometria"]["frazione_libera_dopo"] * 100
             y = p["aero"]["P_asse_max"]
@@ -365,7 +365,8 @@ def confronto(risultati, cfg, cartella, formati):
     ax.set_xlabel("volume interno libero dopo batteria, ruote, avionica, ESC (%)\n"
                   "(× = qualche componente non entra: il suo volume è comunque sottratto)")
     ax.set_ylabel("potenza elettrica per asse alla spinta richiesta (W)")
-    ax.set_title("Spazio contro potenza: ogni punto è un diametro (mm indicati); vuoto = non ammissibile")
+    ax.set_title("Spazio contro potenza al lato ottimo di ogni scenario: un punto per diametro (mm indicati); "
+                 "vuoto = non ammissibile", fontsize=9)
     ax.legend(fontsize=7)
     out += _salva(fig, os.path.join(cartella, "03_pareto_spazio_potenza"), formati)
     # sensibilità al diametro
@@ -374,6 +375,8 @@ def confronto(risultati, cfg, cartella, formati):
         sid = r["scenario"]["id"]
         best_D = {}
         for p in r["progetti"]:
+            if p["L"] != r["ottimo"]["L"]:
+                continue
             g = p["geometria"]
             k = p["D"]
             val = (g["frazione_condotti"], g["frazione_libera_dopo"],
@@ -389,7 +392,7 @@ def confronto(risultati, cfg, cartella, formati):
     for a in axs:
         a.set_xlabel("diametro del condotto alla ventola D (mm)")
     axs[0].legend(fontsize=7)
-    fig.suptitle("Sensibilità al diametro (con più varianti geometriche: la migliore per diametro)")
+    fig.suptitle("Sensibilità al diametro, al lato ottimo di ogni scenario (con più varianti: la migliore per diametro)")
     fig.tight_layout()
     out += _salva(fig, os.path.join(cartella, "04_sensibilita_diametro"), formati)
     # perdite a confronto (per asse)
@@ -514,7 +517,55 @@ def confronto(risultati, cfg, cartella, formati):
     ax.legend(fontsize=7)
     out += _salva(fig, os.path.join(cartella, "11_effetto_ambiente"), formati)
     out += grafico_massa(ott, cfg, os.path.join(cartella, "12_bilancio_massa"), formati)
+    out += grafico_lato(risultati, cfg, os.path.join(cartella, "13_lato_cubo"), formati)
     return out
+
+
+def grafico_lato(risultati, cfg, percorso, formati):
+    """Per ogni lato del cubo, il miglior progetto di ogni scenario: punteggio e massa. Stella = lato ottimo."""
+    mis = cfg["missione"]
+    fig, axs = plt.subplots(1, 2, figsize=(14, 5))
+    for k, r in enumerate(risultati):
+        sid = r["scenario"]["id"]
+        c = COLORI[k % 8]
+        per_L = {}
+        for p in r["progetti"]:
+            cp = p.get("completo")
+            if not cp:
+                continue
+            chiave = (cp["ammissibile"], round(cp["punteggio_totale"], 4))
+            if p["L"] not in per_L or chiave > per_L[p["L"]][0]:
+                per_L[p["L"]] = (chiave, p)
+        if not per_L:
+            continue
+        Ls = sorted(per_L)
+        punt = [per_L[L][1]["completo"]["punteggio_totale"] for L in Ls]
+        mass = [per_L[L][1]["completo"]["massa_totale_kg"] for L in Ls]
+        amm = [per_L[L][0][0] for L in Ls]
+        axs[0].plot(Ls, punt, "-", color=c, lw=1, label=sid)
+        axs[1].plot(Ls, mass, "-", color=c, lw=1, label=sid)
+        for L, p_, m_, a_ in zip(Ls, punt, mass, amm):
+            for ax_, y_ in ((axs[0], p_), (axs[1], m_)):
+                ax_.scatter(L, y_, s=26, facecolors=c if a_ else "white", edgecolors=c, zorder=3)
+        co = r["ottimo"].get("completo")
+        if co:
+            Lo = r["ottimo"]["L"]
+            axs[0].scatter(Lo, co["punteggio_totale"], marker="*", s=220, facecolors=c, edgecolors="k", zorder=5)
+            axs[1].scatter(Lo, co["massa_totale_kg"], marker="*", s=220, facecolors=c, edgecolors="k", zorder=5)
+    axs[1].axhline(mis["massa_obiettivo_kg"], color="#2f9e44", ls="--", lw=1, label="massa obiettivo")
+    axs[1].axhline(mis["massa_massima_kg"], color="#c92a2a", ls="--", lw=1, label="massa massima ammessa")
+    g = cfg["geometria"]
+    for ax_ in axs:
+        ax_.axvspan(g["lato_cubo_min_mm"], g["lato_cubo_max_mm"], color="#e7f5ff", alpha=0.35, zorder=0)
+        ax_.set_xlabel("lato del cubo L (mm)")
+    axs[0].set_ylabel("punteggio totale del miglior progetto")
+    axs[1].set_ylabel("massa stimata del miglior progetto (kg)")
+    axs[0].legend(fontsize=7)
+    axs[1].legend(fontsize=7)
+    fig.suptitle("Lato del cubo: per ogni L il miglior progetto di ogni scenario (stella = lato ottimo; "
+                 "vuoto = non ammissibile). Banda azzurra = intervallo analizzato", fontsize=10)
+    fig.tight_layout()
+    return _salva(fig, percorso, formati)
 
 
 # ======================================================================= massa

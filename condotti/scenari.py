@@ -130,69 +130,6 @@ def gen_spigoli_corti(sc, D, sigma, cfg):
 
 
 # -------------------------------------------------------------------------
-def gen_spigoli_pieni(sc, D, sigma, cfg):
-    """12 condotti per tutto lo spigolo, scalino (S) vicino ai vertici.
-
-    Nel tratto centrale il condotto sta a filo dei due lati (spigolo vero);
-    vicino ai vertici rientra di D_est + gioco con due curve (sfalsamento
-    ciclico solo dove serve).  Il tratto d'estremità deve coprire tutta la
-    zona d'incrocio: se lo spigolo non basta lo scenario è irrealizzabile.
-    Opzione: ugello inclinato di 'angolo_deflessione_deg' verso il centro
-    della faccia per allontanare il getto dalle prese vicine (perdita cos).
-    """
-    L, tw, td, h, Ro, g = _dati_comuni(cfg, D)
-    a = h - tw - Ro
-    delta = 2 * Ro + g
-    De = D * math.sqrt(sigma)
-    Lu = _lung_ugello(D, sigma, cfg["elementi"]["semiangolo_ugello_deg"])
-    th = math.radians(sc.get("angolo_scalino_deg", 30))
-    ell_end = tw + 2 * Ro + delta + 2.0
-    ell_s = delta / math.tan(th)
-    Rj = sc.get("raggio_scalino_su_D", 1.5) * D
-    defl = math.radians(sc.get("angolo_deflessione_deg", 0.0))
-    avvisi = []
-    medio = L - 2 * (ell_end + ell_s)
-    if medio < 0:
-        avvisi.append(f"IRREALIZZABILE: le zone d'estremità ({ell_end + ell_s:.0f} mm per lato) superano il mezzo spigolo")
-    unita = []
-    Lf = cfg["elementi"]["lunghezza_ventola_su_D"] * D
-    for A in range(3):
-        u, v = (A + 1) % 3, (A + 2) % 3
-        for (su, sv) in SEGNI:
-            s_D1 = -PARITA[A]
-            s_th = s_D1 if su * sv > 0 else -s_D1
-            c = np.zeros(3); c[u], c[v] = su * a, sv * a
-            ci = c.copy(); ci[v] = sv * (a - delta)
-            x1 = h - ell_end
-            x2 = max(h - ell_end - ell_s, 0.0)
-            pts = []
-            for coord, base in [(h, ci), (x1, ci), (x2, c), (-x2, c), (-x1, ci), (-h, ci)]:
-                p_ = base.copy(); p_[A] = s_th * coord
-                pts.append(p_)
-            pts = np.array(pts)
-            if medio <= 0:          # degenerazione: niente tratto centrale
-                pts = np.delete(pts, 3, axis=0)
-            nome = f"{'XYZ'[A]}{'+' if su > 0 else '-'}{'+' if sv > 0 else '-'}"
-            perc = Percorso("tronco", pts, [Rj] * (len(pts) - 2), D, De, Lu)
-            # ventola nel primo tratto dritto se ci sta, altrimenti nel tratto centrale
-            s_v = 0.3 * D
-            if ell_end - Rj * math.tan(th / 2) - 0.3 * D < Lf:
-                s_v = ell_end + ell_s + 0.5 * D
-            getto = _e(A, -s_th) * math.cos(defl)
-            # inclinazione verso il centro della faccia (coppia diagonale: si compensa)
-            lat = -np.array([0.0, 0.0, 0.0]); lat[u] = -su; lat[v] = -sv
-            lat = lat / np.linalg.norm(lat)
-            getto = getto + lat * math.sin(defl)
-            getto = getto / np.linalg.norm(getto)
-            unita.append(UnitaGeom(
-                nome=nome, asse=A, verso=_e(A, s_th), tronco=perc, rami=[], s_ventola=s_v,
-                ingresso={"pos": pts[0], "normale": _e(A, s_th), "D": D},
-                uscite=[{"pos": pts[-1], "getto": getto, "D": De}]))
-    return Layout(sc["id"], L, tw, unita, avvisi=avvisi,
-                  parametri={"tratto_estremita_mm": ell_end, "scalino_mm": ell_s, "tratto_centrale_mm": medio})
-
-
-# -------------------------------------------------------------------------
 def gen_spigoli_centrati(sc, D, sigma, cfg):
     """12 condotti dritti centrati sugli spigoli, accorciati e/o spostati; volumetti tolti ai vertici.
 
@@ -270,7 +207,6 @@ def gen_spigoli_centrati(sc, D, sigma, cfg):
 GENERATORI = {
     "sfalsati": gen_sfalsati,
     "spigoli_corti": gen_spigoli_corti,
-    "spigoli_pieni": gen_spigoli_pieni,
     "spigoli_centrati": gen_spigoli_centrati,
 }
 

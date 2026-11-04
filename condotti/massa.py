@@ -110,7 +110,7 @@ def bilancio_massa(layout, cfg, motore, D_mm):
     gruppi = {g: sum(voci[k] for k in ks) for g, ks in GRUPPI.items()}
     return {"voci": voci, "gruppi": gruppi, "totale": tot, "componenti": fissi,
             "dipendente_dalla_configurazione": tot - voci["componenti fissi"],
-            "dettagli": {"area_guscio_m2": A_guscio * 1e-6, "fori_nel_guscio": len(fori),
+            "dettagli": {"lato_cubo_mm": L, "area_guscio_m2": A_guscio * 1e-6, "fori_nel_guscio": len(fori),
                          "superficie_vertici_tolta_m2": A_vert * 1e-6,
                          "longheroni_m": L_long / 1000, "nodi": n_nodi, "staffe": n_staffe,
                          "lunghezza_condotti_mm": L_cond}}

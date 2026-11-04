@@ -20,7 +20,8 @@ def _pulisci(testo):
 def crea_cartella(cfg, scenari, impronta, base):
     m, g = cfg["missione"], cfg["geometria"]
     et = cfg["esecuzione"].get("etichetta") or (
-        f"F{m['spinta_per_asse_N']:.2f}N_L{g['lato_cubo_mm']:.0f}_{cfg['ambiente_progetto']}_{len(scenari)}scenari")
+        f"F{m['spinta_per_asse_N']:.2f}N_L{g['lato_cubo_min_mm']:.0f}-{g['lato_cubo_max_mm']:.0f}"
+        f"_{cfg['ambiente_progetto']}_{len(scenari)}scenari")
     nome = f"{dt.datetime.now():%Y%m%d-%H%M%S}_{_pulisci(et)}_{impronta}"
     percorso = os.path.join(base, nome)
     k = 2

@@ -15,6 +15,23 @@ def _carica_modulo(percorso, nome):
     return mod
 
 
+def lati_del_cubo(g):
+    """Lati del cubo da analizzare (mm): da min a max con il passo dato; il massimo è sempre incluso."""
+    a, b, passo = g["lato_cubo_min_mm"], g["lato_cubo_max_mm"], g["lato_cubo_passo_mm"]
+    n = int(math.floor((b - a) / passo + 1e-9)) + 1
+    lati = [round(a + k * passo, 6) for k in range(n)]
+    if lati[-1] < b - 1e-6:
+        lati.append(float(b))
+    return lati
+
+
+def cfg_con_lato(cfg, lato_mm):
+    """Copia (superficiale) della configurazione con un lato del cubo fissato."""
+    c = dict(cfg)
+    c["geometria"] = dict(cfg["geometria"], lato_cubo_mm=float(lato_mm))
+    return c
+
+
 def carica(percorso_input):
     inp = _carica_modulo(percorso_input, "input_utente")
     cfg = {
@@ -58,6 +75,7 @@ def carica(percorso_input):
     m["spinta_per_kg_N"] = m["spinta_per_asse_N"] / m["massa_per_spinta_kg"]
     if m.get("massa_massima_kg") is None:
         m["massa_massima_kg"] = m["massa_per_spinta_kg"]
+    cfg["lati_cubo_mm"] = lati_del_cubo(cfg["geometria"])
     cfg["arie"] = {k: crea_aria(k, v["p"], v["T"]) for k, v in cfg["ambienti"].items()}
     cfg["aria_progetto"] = cfg["arie"][cfg["ambiente_progetto"]]
     return cfg, scenari, inp
@@ -68,6 +86,14 @@ def _verifica(cfg, scenari):
     g = cfg["geometria"]
     if g["parete_condotto_mm"] < 0.6:
         errori.append("parete del condotto sotto 0,6 mm: non stampabile")
+    for k in ("lato_cubo_min_mm", "lato_cubo_max_mm", "lato_cubo_passo_mm"):
+        if k not in g:
+            errori.append(f"GEOMETRIA senza '{k}' (il lato del cubo è un intervallo: min, max, passo)")
+    if all(k in g for k in ("lato_cubo_min_mm", "lato_cubo_max_mm", "lato_cubo_passo_mm")):
+        if not 0 < g["lato_cubo_min_mm"] <= g["lato_cubo_max_mm"]:
+            errori.append("lato del cubo: serve 0 < lato_cubo_min_mm <= lato_cubo_max_mm")
+        if g["lato_cubo_passo_mm"] <= 0:
+            errori.append("lato_cubo_passo_mm deve essere maggiore di zero")
     if not 0 < cfg["elementi"]["porosita_griglia_ingresso"] < 1:
         errori.append("porosità della griglia d'ingresso fuori da (0, 1)")
     if cfg["ambiente_progetto"] not in cfg["ambienti"]:

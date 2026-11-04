@@ -67,7 +67,7 @@ def grafici_scenario(r, cfg, cartella, formati, log):
     sid = r["scenario"]["id"]
     o = r["ottimo"]
     base = os.path.join(cartella, "grafici", sid)
-    tit = f"{sid} — {r['scenario']['nome']}"
+    tit = f"{sid} — {r['scenario']['nome']} — lato L = {o['L']:.0f} mm"
     try:
         out += [("viste", p) for p in GR.grafico_viste(o["geometria"], cfg, tit, os.path.join(base, "01_viste_layout"), formati)]
     except Exception:
@@ -133,6 +133,7 @@ def main():
     if args.veloce or es.get("modalita", "completa") == "veloce":
         cfg["ottimizzazione"]["diametri_mm"] = cfg["ottimizzazione"]["diametri_mm"][::2]
         cfg["ottimizzazione"]["sigma"] = [0.8, 1.0]
+        cfg["lati_cubo_mm"] = cfg["lati_cubo_mm"][::2]
         es["risoluzione_voxel_mm"] = max(es["risoluzione_voxel_mm"], 6.0)
         for s in scenari:
             if "varianti_geometria" in s:
@@ -154,6 +155,10 @@ def main():
         f"massa {mis['massa_per_spinta_kg']} kg)")
     log(f"Massa: obiettivo {mis['massa_obiettivo_kg']:.2f} kg, massima ammessa {mis['massa_massima_kg']:.2f} kg")
     log(f"Ambiente di progetto: {cfg['ambiente_progetto']}  rho = {cfg['aria_progetto'].rho:.4f} kg/m³")
+    lati = cfg["lati_cubo_mm"]
+    log(f"Lato del cubo: intervallo {cfg['geometria']['lato_cubo_min_mm']:.0f}-{cfg['geometria']['lato_cubo_max_mm']:.0f} mm, "
+        f"passo {cfg['geometria']['lato_cubo_passo_mm']:.0f} mm: {len(lati)} lati analizzati per ogni scenario "
+        f"({', '.join(f'{x:.0f}' for x in lati)})")
     risultati = []
     for sc in scenari:
         log(f"\n== {sc['id']}: {sc['nome']}")
@@ -180,12 +185,12 @@ def main():
     riep = []
     with open(os.path.join(cart, "dati", "progetti.csv"), "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh, delimiter=";")
-        w.writerow(["scenario", "variante", "D_mm", "geometria_ammissibile", "ammissibile", "punteggio", "sigma",
+        w.writerow(["scenario", "L_mm", "variante", "D_mm", "geometria_ammissibile", "ammissibile", "punteggio", "sigma",
                     "ventola", "motore", "P_asse_W", "libero_dopo", "condotti", "massa_kg", "violazioni"])
         for r in risultati:
             for p in r["progetti"]:
                 c, a, g = p.get("completo"), p.get("aero"), p["geometria"]
-                w.writerow([r["scenario"]["id"], json.dumps(p["variante"]), p["D"], p["geometria_ammissibile"],
+                w.writerow([r["scenario"]["id"], p["L"], json.dumps(p["variante"]), p["D"], p["geometria_ammissibile"],
                             c["ammissibile"] if c else "", round(c["punteggio_totale"], 4) if c else "",
                             c["sigma"] if c else "", c["tipo_ventola"] if c else "", c["motore"] if c else "",
                             round(a["P_asse_max"], 2) if a else "", round(g["frazione_libera_dopo"], 4),
@@ -193,7 +198,7 @@ def main():
                             "; ".join(c["violazioni"]) if c else ""])
             o = r["ottimo"]
             c = o.get("completo")
-            riep.append({"scenario": r["scenario"]["id"], "D_mm": o["D"], "variante": o["variante"],
+            riep.append({"scenario": r["scenario"]["id"], "L_mm": o["L"], "D_mm": o["D"], "variante": o["variante"],
                          "ammissibile": bool(c and c["ammissibile"]),
                          "punteggio_totale": c["punteggio_totale"] if c else None,
                          "punteggi": c["punteggi"] if c else None, "violazioni": c["violazioni"] if c else None,
@@ -206,7 +211,10 @@ def main():
                          "sigma": c["sigma"] if c else None,
                          "condotto": _condotto(o["geometria"]["layout"])})
     with open(os.path.join(cart, "dati", "riepilogo.json"), "w", encoding="utf-8") as fh:
-        json.dump(_json({"esecuzione": info, "spinta_per_asse_N": mis["spinta_per_asse_N"],
+        json.dump(_json({"esecuzione": info, "lato_cubo_intervallo_mm": [cfg["geometria"]["lato_cubo_min_mm"],
+                                                                      cfg["geometria"]["lato_cubo_max_mm"]],
+                         "lato_cubo_passo_mm": cfg["geometria"]["lato_cubo_passo_mm"],
+                         "spinta_per_asse_N": mis["spinta_per_asse_N"],
                          "massa_obiettivo_kg": mis["massa_obiettivo_kg"], "massa_massima_kg": mis["massa_massima_kg"],
                          "scenari": riep}), fh, indent=2, ensure_ascii=False)
     amm = [x for x in riep if x["ammissibile"]]
@@ -217,19 +225,27 @@ def main():
 
     # riepilogo a schermo -----------------------------------------------------------
     log("\nRIEPILOGO (progetto ottimo di ogni scenario, dal migliore)")
-    log(f"  {'scenario':<26}{'punteggio':>10}{'D':>7}{'potenza':>12}{'libero':>8}{'massa':>9}  stato")
+    log(f"  {'scenario':<26}{'punteggio':>10}{'L':>7}{'D':>7}{'potenza':>12}{'libero':>8}{'massa':>9}  stato")
     for x in sorted(riep, key=lambda x: -(x["punteggio_totale"] or -1)):
         stato = "ammissibile" if x["ammissibile"] else "NON ammissibile: " + "; ".join(x["violazioni"] or ["—"])
         pt = f"{x['punteggio_totale']:.3f}" if x["punteggio_totale"] is not None else "—"
         P = f"{x['P_asse_W']:.0f} W/asse" if x["P_asse_W"] else "—"
         m = f"{x['massa_totale_kg']:.2f} kg" if x["massa_totale_kg"] else "—"
-        log(f"  {x['scenario']:<26}{pt:>10}{x['D_mm']:>5.0f}mm{P:>12}{x['libero_dopo']:>8.0%}{m:>9}  {stato}")
+        log(f"  {x['scenario']:<26}{pt:>10}{x['L_mm']:>5.0f}mm{x['D_mm']:>5.0f}mm{P:>12}{x['libero_dopo']:>8.0%}{m:>9}  {stato}")
+        g_ = cfg["geometria"]
+        if x["L_mm"] <= g_["lato_cubo_min_mm"] + 1e-6 or x["L_mm"] >= g_["lato_cubo_max_mm"] - 1e-6:
+            lim = "inferiore" if x["L_mm"] <= g_["lato_cubo_min_mm"] + 1e-6 else "superiore"
+            log(f"  {'':<26}   ATTENZIONE: il lato ottimo è al limite {lim} dell'intervallo: "
+                f"l'ottimo vero potrebbe stare fuori, valuta di allargarlo")
         if x["variante"]:
             log(f"  {'':<26}   ottimo con: " + ", ".join(f"{k} = {v}" for k, v in x["variante"].items()))
         if x["condotto"]:
             log(f"  {'':<26}   condotto: {x['condotto']}")
         for a in (x.get("avvisi") or []):
             log(f"  {'':<26}   avviso: {a}")
+    log("\nLATO OTTIMO DEL CUBO (per ogni scenario, dentro l'intervallo analizzato)")
+    for x in sorted(riep, key=lambda x: -(x["punteggio_totale"] or -1)):
+        log(f"  {x['scenario']:<26} L = {x['L_mm']:.0f} mm" + ("" if x["ammissibile"] else "   (progetto non ammissibile)"))
     log(f"\nVincitore tra gli ammissibili: {vinc}")
     log(f"Finito in {time.time() - t0:.0f} s. Risultati in {cart}")
     flog.close()

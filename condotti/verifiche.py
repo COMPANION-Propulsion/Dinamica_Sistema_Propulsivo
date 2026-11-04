@@ -19,6 +19,7 @@ from .geometria import dist_segmenti, dist_segmenti_vett, gioco_minimo
 from . import prestazioni as PR
 from . import massa as MA
 from .scenari import gen_spigoli_centrati
+from .config import lati_del_cubo, cfg_con_lato
 
 ARIA = crea_aria("prova", 82500.0, 293.15)
 TIPO = TipoVentola("prova", phi_d=0.5, psi_d=0.25, psi_0_su_psi_d=1.4, eta_max=0.7, Re_rif=2e5,
@@ -210,6 +211,33 @@ def test_spigoli_centrati():
     base = {firma(u, [0, 1, 2]) for u in lay.unita}
     ruotato = {firma(u, [2, 0, 1]) for u in lay.unita}
     verifica("spigoli centrati: invarianti per rotazione di 120 gradi", base == ruotato)
+
+
+def test_lati_del_cubo():
+    g = {"lato_cubo_min_mm": 280.0, "lato_cubo_max_mm": 350.0, "lato_cubo_passo_mm": 10.0}
+    verifica("lati del cubo: 280-350 passo 10 = 8 valori con gli estremi",
+             lati_del_cubo(g) == [280.0, 290.0, 300.0, 310.0, 320.0, 330.0, 340.0, 350.0])
+    g2 = dict(g, lato_cubo_passo_mm=25.0)
+    verifica("lati del cubo: il massimo è sempre incluso anche se il passo non lo raggiunge",
+             lati_del_cubo(g2) == [280.0, 305.0, 330.0, 350.0])
+    verifica("lati del cubo: min = max dà un solo lato",
+             lati_del_cubo(dict(g, lato_cubo_max_mm=280.0)) == [280.0])
+    cfg = _cfg_geometria()
+    c2 = cfg_con_lato(cfg, 300.0)
+    verifica("cfg_con_lato: cambia solo la copia", c2["geometria"]["lato_cubo_mm"] == 300.0
+             and cfg["geometria"]["lato_cubo_mm"] == 320.0)
+
+
+def test_effetto_del_lato_sugli_spigoli_centrati():
+    cfg = _cfg_geometria()
+    sc = {"id": "p", "lunghezza_frazione": 0.8, "spostamento_frazione": 0.0}
+    c = [gen_spigoli_centrati(sc, 34.0, 0.8, cfg_con_lato(cfg, L)).parametri["estremita_max_mm"]
+         for L in (280.0, 320.0, 350.0)]
+    verifica("lato del cubo maggiore = più spazio lungo lo spigolo per i condotti",
+             c[0] < c[1] < c[2], f"limite estremità {c[0]:.0f}, {c[1]:.0f}, {c[2]:.0f} mm")
+    # il limite è mezzo lato meno parete, raggio e gioco: variazione di L/2 per mm di lato
+    verifica("il limite delle estremità cresce di mezzo millimetro per ogni millimetro di lato",
+             abs((c[2] - c[0]) - 35.0) < 1e-6)
 
 
 def test_massa_tubo():

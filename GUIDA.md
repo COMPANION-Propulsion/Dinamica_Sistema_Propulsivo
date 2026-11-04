@@ -51,7 +51,7 @@ Vuoi vedere il meccanismo senza aspettare la run completa.
 |---|---|---|
 | `etichetta` | testo libero nel nome della cartella di output | vuoto = nome automatico |
 | `modalita` | `"completa"` o `"veloce"` | veloce: griglia ridotta, per prove |
-| `verifiche_fisiche` | `True` esegue prima i 31 controlli del codice | se un controllo fallisce, la run si ferma |
+| `verifiche_fisiche` | `True` esegue prima i 37 controlli del codice | se un controllo fallisce, la run si ferma |
 | `risoluzione_voxel_mm` | risoluzione della griglia dello spazio interno | 4 mm per le prove, 2–3 mm per i risultati finali |
 | `formato_grafici` | `["svg"]` oppure `["svg", "png"]` | |
 | `cartella_output` | cartella dove salvare le run | per default `output` |
@@ -88,7 +88,9 @@ Per default: `volo_20C` (825 mbar, 20 °C) per il volo; `lab_20C` (1013 mbar) pe
 
 | Chiave | Valore | Cosa fa |
 |---|---|---|
-| `lato_cubo_mm` | 320.0 | lato esterno del cubo |
+| `lato_cubo_min_mm` | 280.0 | **intervallo del lato del cubo**: limite inferiore (mm). Il lato ottimo è un risultato |
+| `lato_cubo_max_mm` | 350.0 | limite superiore (mm), sempre incluso nell'analisi |
+| `lato_cubo_passo_mm` | 10.0 | passo dell'intervallo: ogni lato in più allunga la run (280–350 con passo 10 = 8 lati) |
 | `parete_cubo_mm` | 3.0 | SEGNAPOSTO: spessore della parete (entra nello spazio interno) |
 | `parete_condotto_mm` | 1.2 | SEGNAPOSTO: spessore del condotto; minimo 0,6 mm |
 | `gioco_tra_condotti_mm` | 5.0 | distanza minima tra condotti: sotto zero i condotti si intersecano |
@@ -209,10 +211,10 @@ Ogni scenario è un blocco `{...}` nella lista `SCENARI`.
 | `id` | nome breve che compare in tutte le tabelle e nei grafici |
 | `attivo` | `True` = analizzato, `False` = escluso dalla run |
 | `nome`, `origine`, `descrizione`, `pregi_attesi`, `difetti_attesi` | testi: appaiono nell'Excel |
-| `topologia` | uno tra `sfalsati`, `spigoli_corti`, `spigoli_pieni`, `spigoli_centrati` |
+| `topologia` | uno tra `sfalsati`, `spigoli_corti`, `spigoli_centrati` |
 | `varianti_geometria` | liste di valori: l'ottimizzatore prova tutte le combinazioni |
 
-**Lo scenario S5 (`S5_SPIGOLI_CENTRATI_12`)** è quello della tua foto. Ha tre parametri che puoi cambiare:
+**Lo scenario S4 (`S4_SPIGOLI_CENTRATI_12`)** è quello della tua foto. Ha tre parametri che puoi cambiare:
 
 - `lunghezza_frazione` (default 0.8): lunghezza del condotto in frazione del massimo consentito. Con 1 il condotto arriva al limite, con valori piccoli si accorcia.
 - `spostamento_frazione` (default 0.0): spostamento lungo lo spigolo. Con 0 il condotto è centrato e il pezzo conserva i tre piani di simmetria. Valori negativi o positivi lo spostano verso i due vertici e rompono la simmetria.
@@ -240,28 +242,30 @@ python RUN.py --input altro.py    # usa un altro file di input
 
 **Cosa fa in ordine**
 
-1. **Verifiche fisiche.** Esegue 31 controlli del codice contro risultati noti (attrito, bilancio di potenza, affinità delle ventole, simmetria dei condotti, rotazione a 120°, massa di un tubo). Se uno fallisce, la run si ferma: non vanno usati risultati di un codice che non passa i controlli.
+1. **Verifiche fisiche.** Esegue 37 controlli del codice contro risultati noti (attrito, bilancio di potenza, affinità delle ventole, simmetria dei condotti, rotazione a 120°, massa di un tubo). Se uno fallisce, la run si ferma: non vanno usati risultati di un codice che non passa i controlli.
 2. **Analisi per ogni scenario attivo.** Per ogni variante geometrica e per ogni diametro: geometria, componenti, ventola, motore, dinamica, struttura, massa, punteggio. Il progetto migliore dello scenario è quello ammissibile con il punteggio più alto. Se nessuno è ammissibile, viene riportato il meno peggio con le violazioni.
 3. **Grafici** per scenario e di confronto.
 4. **Excel** con tutti i fogli.
 5. **Riepilogo** nella cartella e a schermo.
 
-**Tempi.** Modalità completa: circa 6 minuti con cinque scenari. Modalità veloce: circa 2 minuti.
+**Tempi.** Il tempo è circa il numero di lati dell'intervallo per il tempo di una run a lato fisso. Con 8 lati la run completa dura molto di più di prima (diverse decine di minuti, ore con griglie di varianti fitte). Per le prove usa `"modalita": "veloce"`, che analizza un lato su due, o riduci l'intervallo o aumenta il passo.
 
 **Come leggere il log (righe nel terminale).**
 
 | Riga | Significato |
 |---|---|
-| `verifiche superate` | i 31 controlli passano: si può andare avanti |
-| `D = 34 mm (...): punteggio 0.649` | progetto ammissibile per ingombro, con punteggio |
-| `D = 34 mm (...): punteggio 0.649 con violazioni` | progetto analizzato ma non ammissibile (motore, Mach, massa, ecc.) |
-| `D = 42 mm (...): spinta non raggiunta` | la ventola non riesce a dare la spinta richiesta con questo diametro |
-| `spazio/geometria non ammissibile; diametri successivi ... non analizzati` | lo stop per ingombro: si passa alla variante successiva |
-| `massimo diametro ammissibile per variante (Xi): ...` | per ogni variante il diametro massimo con soluzione ammissibile (solo informativo) |
-| `-> ottimo: D = 34 mm (...)` | il progetto migliore dello scenario |
+| `verifiche superate` | i 37 controlli passano: si può andare avanti |
+| `L 315 · D  34 (...): punteggio 0.649` | progetto con lato del cubo L e diametro D, ammissibile, con punteggio |
+| `L 315 · D  34 (...): punteggio 0.649 con violazioni` | progetto analizzato ma non ammissibile (motore, Mach, massa, ecc.) |
+| `L 315 · D  42 (...): spinta non raggiunta` | la ventola non riesce a dare la spinta richiesta con questo diametro |
+| `spazio/geometria non ammissibile; diametri successivi ... non analizzati` | lo stop per ingombro (anche componenti che non entrano): si passa alla variante successiva |
+| `>> lato 315 mm (2/8): miglior punteggio ...` | riepilogo di ogni lato del cubo con il suo miglior progetto: serve a seguire l'avanzamento di una run lunga |
+| `massimo diametro ammissibile (Xi) tra le varianti, per lato: ...` | per ogni lato l'intervallo dei diametri massimi ammissibili (solo informativo) |
+| `-> ottimo: lato L = 315 mm, D = 34 mm (...)` | il progetto migliore dello scenario, con il suo lato del cubo |
+| `ATTENZIONE: il lato ottimo è al limite ...` | l'ottimo coincide con un estremo dell'intervallo del lato: conviene allargarlo |
 | `avviso:` | aspetto da tenere d'occhio che non blocca il progetto (risonanze, massa sopra obiettivo, assi pieni contemporanei) |
 
-Il riepilogo finale elenca gli scenari dal migliore, con punteggio, diametro, potenza per asse, spazio libero, massa e stato.
+Il riepilogo finale elenca gli scenari dal migliore, con punteggio, lato L, diametro, potenza per asse, spazio libero, massa e stato. Segue il blocco **LATO OTTIMO DEL CUBO**, con il lato di ogni scenario.
 
 ---
 
@@ -288,10 +292,9 @@ output/AAAAMMGG-HHMMSS_…/
 ├── grafici/
 │   ├── S1_SFALSATI_12/                ← 9 grafici per scenario
 │   ├── S2_SPIGOLI_CORTI_12/
-│   ├── S3_SPIGOLI_PIENI_12/
-│   ├── S4_REVERSIBILI_6/
-│   ├── S5_SPIGOLI_CENTRATI_12/
-│   └── confronto/                     ← 12 grafici che mettono a confronto gli scenari
+│   ├── S3_REVERSIBILI_6/
+│   ├── S4_SPIGOLI_CENTRATI_12/
+│   └── confronto/                     ← 13 grafici che mettono a confronto gli scenari
 ├── dati/
 │   ├── riepilogo.json                 ← risultati principali per scenario
 │   └── progetti.csv                   ← ogni progetto valutato (separatore ;)
@@ -353,11 +356,12 @@ Nota: nel terminale di Windows i nomi con accenti possono comparire storti (per 
 | `10_struttura.svg` | frequenza, instabilità e rigidezza dei condotti |
 | `11_effetto_ambiente.svg` | come la spinta cambia con la pressione a giri fissi |
 | `12_bilancio_massa.svg` | massa totale per scenario, con obiettivo e massima; a destra le voci che cambiano |
+| `13_lato_cubo.svg` | punteggio e massa del miglior progetto per ogni lato del cubo; la stella è il lato ottimo di ogni scenario |
 
 ### Dati
 
 - **`dati/riepilogo.json`**: per ogni scenario il progetto migliore, con diametro, variante, punteggi, violazioni, avvisi e voci di massa. Si legge con un editor di testo o con Python.
-- **`dati/progetti.csv`**: una riga per ogni progetto valutato, con diametro, variante, ammissibilità, punteggio, potenza e massa. Separatore `;`, si apre direttamente con Excel in italiano.
+- **`dati/progetti.csv`**: una riga per ogni progetto valutato, con lato del cubo (`L_mm`), diametro, variante, ammissibilità, punteggio, potenza e massa. Separatore `;`, si apre direttamente con Excel in italiano.
 
 ---
 
@@ -386,7 +390,7 @@ Ogni cartella di output contiene `INPUT_usato.py`: il file esatto usato per quel
 
 - Per confrontare due run, apri i due `INPUT_usato.py` e cerca le differenze.
 - Il file `output/registro_esecuzioni.csv` elenca le run in ordine di data. Due righe con la stessa impronta hanno usato gli stessi dati.
-- La run più recente di questo lavoro è `20261103-164249_F1.39N-L320-volo-20C-5scenari_9cd75502`.
+- Dalla ricerca sul lato del cubo il nome della cartella contiene l'intervallo (per esempio `L280-350`) invece di un lato solo: le run precedenti (`L320`) hanno un lato fisso e non sono confrontabili con quelle nuove.
 - La run `20261103-163031_…` usava una regola di stop più aggressiva: si fermava anche per motore e massa. Ha quindi meno diametri analizzati. Non confrontarla con la run più recente sui diametri.
 
 ---
@@ -396,7 +400,7 @@ Ogni cartella di output contiene `INPUT_usato.py`: il file esatto usato per quel
 - **Valori SEGNAPOSTO**: motori, curve delle ventole, masse dei componenti, parametri del telaio, dimensioni dei moduli. Il peso assoluto della massa dipende soprattutto da questi.
 - **Stime di screening**: effetto di sistema, indice di riaspirazione, perdita dei volumetti d'angolo. Vanno confermate con CFD o al banco.
 - **Ipotesi sullo stop dei diametri**: per l'ingombro è dimostrata (cresce con D). Per motore, Mach e massa non si applica lo stop.
-- **Massa di S5**: 4,56 kg, sopra l'obiettivo di 4 kg. Il margine dipende dalle stime sopra.
+- **Massa di S4**: 4,56 kg, sopra l'obiettivo di 4 kg. Il margine dipende dalle stime sopra.
 - **Chiavi non collegate**: `centro_di_massa_mm`, `tempo_salita_spinta_max_s`, `capacita_Wh`. Non cambiano nessun risultato.
 
 ---
@@ -405,10 +409,10 @@ Ogni cartella di output contiene `INPUT_usato.py`: il file esatto usato per quel
 
 - [ ] `INPUT.py`: `modalita` su `"veloce"`, `verifiche_fisiche` su `True`
 - [ ] `python RUN.py` finisce con `Finito in … s`
-- [ ] Nel terminale: `31/31 verifiche superate`
+- [ ] Nel terminale: `37/37 verifiche superate`
 - [ ] Ultima cartella in `output/` presente, con `excel/Confronto_scenari.xlsx`
 - [ ] Excel: foglio **Classifica** aperto, vincitore letto
-- [ ] Excel: foglio **Massa** aperto, totale di S5 letto
-- [ ] Grafico `grafici/S5_SPIGOLI_CENTRATI_12/01_viste_layout.svg` aperto
-- [ ] Modifica di prova: `lunghezza_frazione` in S5 da `0.8` a `0.9`, nuova run, confronto di `Classifica`
+- [ ] Excel: foglio **Massa** aperto, totale di S4 letto
+- [ ] Grafico `grafici/S4_SPIGOLI_CENTRATI_12/01_viste_layout.svg` aperto
+- [ ] Modifica di prova: `lunghezza_frazione` in S4 da `0.8` a `0.9`, nuova run, confronto di `Classifica`
 - [ ] `modalita` riportata su `"completa"` prima della run definitiva

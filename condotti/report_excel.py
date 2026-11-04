@@ -114,7 +114,10 @@ def _leggimi(ws, cfg, info):
         ("Massa per dimensionare la spinta (kg)", cfg["missione"]["massa_per_spinta_kg"]),
         ("Massa obiettivo (kg)", cfg["missione"]["massa_obiettivo_kg"]),
         ("Massa massima ammessa (kg)", cfg["missione"]["massa_massima_kg"]),
-        ("Lato del cubo (mm)", cfg["geometria"]["lato_cubo_mm"]),
+        ("Lato del cubo: intervallo analizzato (mm)",
+         f"{cfg['geometria']['lato_cubo_min_mm']:.0f} - {cfg['geometria']['lato_cubo_max_mm']:.0f}, "
+         f"passo {cfg['geometria']['lato_cubo_passo_mm']:.0f} ({len(cfg['lati_cubo_mm'])} lati). "
+         f"Il lato ottimo di ogni scenario è nel foglio Classifica."),
         ("Tensione del bus (V)", cfg["elettrico"]["tensione_bus_V"]),
         ("", ""),
         ("COME SI LEGGE", ""),
@@ -158,7 +161,8 @@ def _classifica(ws, risultati, cfg):
     _cella(ws, 5, 1, "← valori da INPUT.py, modificabili qui")
     tit = (["Scenario", "Nome", "Ammissibile"] + [f"punteggio {c}" for c in crit] +
            ["Totale pesato", "Posizione", "Violazioni | avvisi", "D (mm)", "σ ugello", "Tipo di ventola", "Motore",
-            "Potenza per asse (W)", "Libero dopo i componenti", "Massa totale stimata (kg)"])
+            "Potenza per asse (W)", "Libero dopo i componenti", "Massa totale stimata (kg)",
+            "Lato cubo OTTIMO (mm)"])
     _intest(ws, 7, tit)
     ott = [r for r in risultati]
     r0 = 8
@@ -194,7 +198,8 @@ def _classifica(ws, risultati, cfg):
             _cella(ws, row, jt + 7, o["aero"]["P_asse_max"], "0.0")
             _cella(ws, row, jt + 9, c["massa_totale_kg"], "0.00")
         _cella(ws, row, jt + 8, o["geometria"]["frazione_libera_dopo"], "0.0%")
-    _larghezze(ws, [22, 46, 12] + [12] * len(crit) + [12, 10, 50, 8, 8, 22, 14, 12, 12, 12])
+        _cella(ws, row, jt + 10, o["L"], "0", F_B)
+    _larghezze(ws, [22, 46, 12] + [12] * len(crit) + [12, 10, 50, 8, 8, 22, 14, 12, 12, 12, 14])
     ws.freeze_panes = "B8"
     rnote = r0 + n + 2
     note = ["Come sono costruiti i punteggi (0-1):",
@@ -218,6 +223,7 @@ def _metriche_ottimo(r, cfg):
     car = g["realizzabilita"]
     return [
         ("GEOMETRIA", None, None, None),
+        ("Lato del cubo OTTIMO", o["L"], "mm", "0"),
         ("Diametro del condotto alla ventola", o["D"], "mm", "0"),
         ("Variante geometrica", o["variante"] or "—", "", None),
         ("Numero di ventole (unità)", len(g["layout"].unita), "", "0"),
@@ -382,16 +388,16 @@ def _perdite(ws, risultati):
 def _spazio(ws, risultati, cfg):
     _titolo(ws, "Spazio interno e collocazione dei componenti (progetto ottimo)",
             "Coordinate in mm rispetto al centro del cubo (X destra, Y fronte, Z alto).")
-    _intest(ws, 4, ["Scenario", "D (mm)", "Condotti", "Volumetti tolti ai vertici", "Libero prima", "Libero dopo",
+    _intest(ws, 4, ["Scenario", "Lato cubo (mm)", "D (mm)", "Condotti", "Volumetti tolti ai vertici", "Libero prima", "Libero dopo",
                     "Cubo libero (mm)", "Sfera libera (mm)", "Gioco minimo (mm)", "Coppia più vicina",
                     "Sovrapposizioni con moduli (cm³)", "Bocche in zone centrali"])
     row = 5
     for r in risultati:
         g = r["ottimo"]["geometria"]
-        vals = [r["scenario"]["id"], g["D"], g["frazione_condotti"], g["frazione_extra"], g["frazione_libera_prima"],
+        vals = [r["scenario"]["id"], g["layout"].L, g["D"], g["frazione_condotti"], g["frazione_extra"], g["frazione_libera_prima"],
                 g["frazione_libera_dopo"], g["cubo_libero_mm"], g["sfera_libera_mm"], g["gioco_min_mm"],
                 g["coppia_critica"], g["sovrapposizioni_zone_cm3"] or "nessuna", g["bocche_in_zone_centrali"] or "nessuna"]
-        fm = [None, "0", "0.0%", "0.0%", "0.0%", "0.0%", "0", "0", "0.0", None, None, None]
+        fm = [None, "0", "0", "0.0%", "0.0%", "0.0%", "0.0%", "0", "0", "0.0", None, None, None]
         for j, (v, f) in enumerate(zip(vals, fm)):
             _cella(ws, row, 1 + j, v, f)
         row += 1
@@ -411,7 +417,7 @@ def _spazio(ws, risultati, cfg):
                 _cella(ws, row, 1 + j, v, "0" if j >= 4 else None,
                        fill=(FILL_NO if box is None and j == 3 else None))
             row += 1
-    _larghezze(ws, [22, 34, 18, 12, 10, 10, 10, 10, 10, 10, 34, 34])
+    _larghezze(ws, [22, 34, 18, 12, 10, 10, 10, 10, 10, 10, 34, 34, 20])
 
 
 def _controllo(ws, risultati, cfg):
@@ -552,7 +558,7 @@ def _ingestione(ws, risultati, cfg):
 
 def _tutti(ws, risultati):
     _titolo(ws, "Tutti i progetti valutati dall'ottimizzatore")
-    tit = ["Scenario", "Variante", "D (mm)", "Geometria ammissibile", "Completo", "Ammissibile", "Punteggio",
+    tit = ["Scenario", "Variante", "Lato cubo (mm)", "D (mm)", "Geometria ammissibile", "Completo", "Ammissibile", "Punteggio",
            "σ", "Ventola", "Motore", "P asse (W)", "Picco 3 assi (W)", "Condotti", "Libero dopo", "Gioco (mm)",
            "Componenti tutti", "Violazioni"]
     _intest(ws, 4, tit)
@@ -562,7 +568,7 @@ def _tutti(ws, risultati):
             g = p["geometria"]
             c = p.get("completo")
             a = p.get("aero")
-            vals = [r["scenario"]["id"], p["variante"] or "—", p["D"], "sì" if p["geometria_ammissibile"] else "no",
+            vals = [r["scenario"]["id"], p["variante"] or "—", p["L"], p["D"], "sì" if p["geometria_ammissibile"] else "no",
                     "sì" if c else "no", ("sì" if c["ammissibile"] else "no") if c else "—",
                     c["punteggio_totale"] if c else None, c["sigma"] if c else None,
                     c["tipo_ventola"] if c else None, c["motore"] if c else None,
@@ -570,13 +576,13 @@ def _tutti(ws, risultati):
                     g["frazione_condotti"], g["frazione_libera_dopo"], g["gioco_min_mm"],
                     "sì" if g["componenti_tutti"] else "no",
                     "; ".join(c["violazioni"]) if c else _viol_geom(g)]
-            fm = [None, None, "0", None, None, None, "0.000", "0.00", None, None, "0.0", "0", "0.0%", "0.0%", "0.0",
+            fm = [None, None, "0", "0", None, None, None, "0.000", "0.00", None, None, "0.0", "0", "0.0%", "0.0%", "0.0",
                   None, None]
             for j, (v, f) in enumerate(zip(vals, fm)):
                 _cella(ws, row, 1 + j, v, f)
             row += 1
-    _larghezze(ws, [22, 40, 8, 12, 10, 12, 10, 8, 22, 14, 10, 10, 10, 10, 10, 12, 70])
-    ws.freeze_panes = "D5"
+    _larghezze(ws, [22, 40, 10, 8, 12, 10, 12, 10, 8, 22, 14, 10, 10, 10, 10, 10, 12, 70])
+    ws.freeze_panes = "E5"
     ws.auto_filter.ref = f"A4:{COL(len(tit))}{row - 1}"
 
 
@@ -628,6 +634,7 @@ def _ipotesi(ws, cfg):
         ("Ingestione", "Indice di screening (pozzo emisferico contro getto tondo): NON è una previsione CFD."),
         ("Dinamica", "Salita con limite di corrente; PD con zero a ω_c/3; attuatore del primo ordine τ = t90/2,3."),
         ("Struttura", "Tubo appoggiato + massa (Dunkerley); p_cr = 2E/(1−ν²)(t/D)³; flessione della massa a n g."),
+        ("Lato del cubo", "Intervallo e passo in INPUT.py (GEOMETRIA). Per ogni lato si ripete tutta l'ottimizzazione; l'ottimo è il progetto ammissibile con il punteggio più alto (a parità: condotto più centrato, poi cubo più piccolo). La spinta richiesta non dipende dal lato: dipende dalla massa di progetto."),
         ("Spazio", f"Voxel da {cfg['esecuzione']['risoluzione_voxel_mm']} mm; tubi come capsule (prudente sulle curve); componenti come scatole; volumetti d'angolo tolti ai vertici."),
         ("Spigoli centrati", "Condotto dritto per ogni spigolo, tangente alle due facce, centrato sulla mezzeria. Accorciato (lunghezza_frazione) e/o spostato lungo lo spigolo (spostamento_frazione) fino a che le estremità restano a distanza c = a − (2 Ro + gioco) dal vertice. Ai vertici si toglie un volumetto d'angolo dalle estremità alla faccia interna: il vertice è aperto e i condotti sboccano lì."),
         ("Massa", "Stima parametrica (condotti/massa.py, parametri TELAIO in INPUT.py): guscio a spessore equivalente, longheroni e nodi, pareti dei condotti, alloggiamenti, staffe, flange e griglie, fori di vertice, motori, ESC, cavi, viteria; componenti da COMPONENTI e MASSE_FISSE. SEGNAPOSTO finché non si pesa un prototipo."),
