@@ -1,20 +1,65 @@
-# GUIDA: come provare l'analisi dei condotti, passo per passo
+# Analisi dei condotti di COMPANION
 
-Questa guida accompagna la prima prova: si modifica un valore in `INPUT.py`, si lancia `RUN.py`, si legge la cartella di output. Va letta insieme a `LEGGIMI.md`, che è la scheda tecnica.
+Confronta configurazioni di condotti per il cubo free-flyer e cerca, per ognuna, il progetto migliore. Gli obiettivi sono in tensione:
+
+- **più spazio interno** per batteria, ruote di reazione, avionica ed ESC;
+- **condotti semplici e con poche perdite di carico**, quindi meno potenza per la stessa spinta;
+- **massa intorno ai 4 kg**: ogni configurazione si porta dietro una massa strutturale diversa (condotti, staffe, volumetti d'angolo, telaio).
+
+## Indice
+
+1. [Installazione](#1-installazione)
+2. [Come si usa](#2-come-si-usa)
+3. [Prima prova (circa 2 minuti)](#3-prima-prova-circa-2-minuti)
+4. [Cosa calcola](#4-cosa-calcola)
+5. [Scenari](#5-scenari)
+6. [Massa](#6-massa)
+7. [INPUT.py: come si modifica](#7-inputpy-come-si-modifica)
+8. [RUN.py: cosa fa](#8-runpy-cosa-fa)
+9. [La cartella output](#9-la-cartella-output)
+10. [Come leggere un risultato](#10-come-leggere-un-risultato)
+11. [Come confrontare due run](#11-come-confrontare-due-run)
+12. [Limiti e cosa non fidarsi ancora](#12-limiti-e-cosa-non-fidarsi-ancora)
+13. [Per estendere](#13-per-estendere)
+14. [Checklist della prima prova](#14-checklist-della-prima-prova)
+
+---
+
+## 1. Installazione
+
+```bash
+pip install -r requirements.txt
+```
+
+Dipendenze: `numpy`, `scipy`, `matplotlib`, `openpyxl` (versioni minime in `requirements.txt`).
+
+---
+
+## 2. Come si usa
 
 Tre cose da usare, nient'altro:
 
 | Cosa | Dove | A cosa serve |
 |---|---|---|
-| Input | `INPUT.py` | tutti i valori modificabili e gli scenari |
-| Run | `RUN.py` | l'unico script da lanciare |
+| Input | `INPUT.py` | **l'unico file da modificare.** Tutti i dati e tutti gli scenari, in sezioni numerate (0 esecuzione … 11 scenari). Ogni valore ha la fonte; `SEGNAPOSTO` = da sostituire con un dato vero |
+| Run | `RUN.py` | **l'unico script da lanciare** (`python RUN.py` o il tasto Run dell'editor). Fa le verifiche fisiche, l'analisi, i grafici e l'Excel |
 | Output | `output/` | una cartella nuova per ogni run |
+
+```bash
+python RUN.py
+```
+
+- Prove rapide: in `INPUT.py` metti `ESECUZIONE["modalita"] = "veloce"`.
+- Escludere uno scenario: `"attivo": False` nel suo blocco in fondo a `INPUT.py`.
+- Le verifiche fisiche (37 controlli contro risultati noti) girano prima dell'analisi: se una fallisce l'analisi non parte.
+
+Tutto il resto sta nella cartella `condotti/` e non va toccato per l'uso normale.
 
 ---
 
-## 1. Prima prova (circa 2 minuti)
+## 3. Prima prova (circa 2 minuti)
 
-Vuoi vedere il meccanismo senza aspettare la run completa.
+Per vedere il meccanismo senza aspettare la run completa:
 
 1. In `INPUT.py`, sezione 0, cambia `"modalita": "completa"` in `"modalita": "veloce"`.
 2. Da terminale, nella cartella del progetto:
@@ -30,7 +75,95 @@ Vuoi vedere il meccanismo senza aspettare la run completa.
 
 ---
 
-## 2. INPUT.py: come si modifica
+## 4. Cosa calcola
+
+In ordine, per ogni progetto:
+
+1. **Geometria e spazio**: condotti a voxel, volumetti d'angolo, gioco tra condotti, moduli riservati, bocche nelle zone centrali, collocazione automatica dei componenti, volume libero.
+2. **Fluidodinamica**: rete 1D per ogni unità (griglia, imbocco, tratti, curve, effetto di sistema, ventola con statore, ugello, griglia d'uscita); giri per la spinta richiesta; potenza elettrica dal modello del motore.
+3. **Controllo**: forza e momento puri disponibili, forza residua con una ventola guasta, indice di riaspirazione per le 26 combinazioni di comandi.
+4. **Dinamica**: salita della spinta, inversione per le reversibili, margine di fase, ruote di reazione nella finestra di 5 s.
+5. **Struttura**: frequenza del tratto con la ventola e Campbell, instabilità a pressione esterna, sforzi a 1,8 g e 9 g, rigidezza portata dai condotti.
+6. **Massa**: bilancio completo, confronto con obiettivo e massima, spinta ricontrollata.
+7. **Realizzabilità e punteggi**: parti, curve, attuatori, stampa; punteggio pesato su spazio, perdite, semplicità, robustezza, dinamica, massa.
+
+L'**ottimizzatore** prova, per ogni scenario, lato del cubo × varianti geometriche × diametro. Per ogni geometria sceglie poi Venturi, tipo di ventola e motore a minima potenza.
+
+### Diametri: regola di potatura
+
+Per ogni lato del cubo e per ogni variante geometrica si sale con il diametro D, seguendo la lista `OTTIMIZZAZIONE["diametri_mm"]`. Il diametro massimo con soluzione ammissibile è **Xi**, riportato nel log per lato.
+
+Si smette di salire solo quando l'**ingombro** non regge: condotti che si intersecano, moduli riservati, bocche nelle zone centrali, componenti che non entrano. L'ingombro peggiora con D, quindi i diametri successivi non vengono analizzati.
+
+Motore, Mach, potenza e massa **non** attivano lo stop: per ora tutti i diametri della lista vengono analizzati, anche quando il progetto non è ammissibile per quei motivi.
+
+---
+
+## 5. Scenari
+
+| Id | Configurazione | Origine |
+|---|---|---|
+| S1_SFALSATI_12 | 12 condotti dritti per tutto il lato, sfalsamento ciclico | modello interattivo |
+| S2_SPIGOLI_CORTI_12 | 12 condotti lunghi mezzo spigolo, presa a metà spigolo con curva | tua proposta |
+| S3_REVERSIBILI_6 | 6 ventole reversibili a coppie sfalsate | Excel del compagno |
+| S4_SPIGOLI_CENTRATI_12 | 12 condotti centrati sugli spigoli, accorciati e/o spostati, volumetti tolti ai vertici | tua proposta (foto CAD) |
+
+### Lato del cubo: è un risultato, non un dato
+
+In `INPUT.py`, sezione 3, il lato del cubo non è un numero: si indica l'**intervallo** da analizzare (`lato_cubo_min_mm`, `lato_cubo_max_mm`, `lato_cubo_passo_mm`; vedi [sezione 3 di INPUT.py](#sezione-3--cubo)).
+
+Per ogni scenario l'ottimizzatore ripete tutta la ricerca (varianti × diametri) a ogni lato dell'intervallo. L'ottimo è il progetto ammissibile con il punteggio più alto; a parità di punteggio vince il condotto più centrato, poi il cubo più piccolo.
+
+Il **lato ottimo di ogni scenario** compare: nel riepilogo del terminale (colonna `L` e blocco "LATO OTTIMO DEL CUBO"), nell'Excel (foglio *Classifica*, ultima colonna; fogli *Progetto ottimo*, *Spazio interno*, *Tutti i progetti*), in `dati/riepilogo.json` (`L_mm`), in `dati/progetti.csv` (colonna `L_mm`), nei titoli dei grafici di scenario e nel grafico `13_lato_cubo`.
+
+Se il lato ottimo coincide con un limite dell'intervallo, il terminale lo segnala: l'ottimo vero potrebbe stare fuori, quindi conviene allargare l'intervallo.
+
+Ogni lato in più allunga la run: tempo ≈ numero di lati × tempo di una run a lato fisso.
+
+### S4, spigoli centrati: come funziona
+
+Base: ogni spigolo ha un condotto dritto, tangente alle due facce che lo formano. Nel vertice le tre rette dei condotti si incontrerebbero. Per eliminare l'intersezione si fanno due cose, combinabili:
+
+- **accorciare** il condotto, lasciandolo centrato sulla mezzeria dello spigolo (3 piani di simmetria);
+- **spostarlo** lungo lo spigolo, rompendo la simmetria.
+
+Ai vertici si toglie un volumetto d'angolo, dalle estremità dei condotti alla faccia interna: il vertice è aperto e i condotti sboccano lì.
+
+| Parametro in INPUT.py | Default | Significato |
+|---|---|---|
+| `lunghezza_frazione` | 0.8 | lunghezza del condotto / lunghezza massima consentita (1 = arriva fino al limite, valori piccoli lo accorciano) |
+| `spostamento_frazione` | 0.0 | spostamento lungo lo spigolo, in frazione del margine disponibile; `0` = centrato (tre piani di simmetria), negativo/positivo = verso i due vertici |
+| `posizione_ventola_frazione` | 0.3 | posizione della ventola lungo il condotto, dalla presa |
+| `varianti_geometria` | — | i valori da provare (prodotto cartesiano): l'ottimizzatore prova tutte le combinazioni |
+
+La griglia `varianti_geometria` provata di default è: lunghezza `[0.7, 0.8, 0.9, 1.0]` × spostamento `[-0.5, 0.0, 0.5]`, cioè 12 varianti. Per cambiarle modifica le due liste.
+
+Il limite delle estremità, da cui dipendono sia accorciamento sia spostamento, è c = a − (2·Ro + gioco), con a la distanza dell'asse dal centro e Ro il raggio esterno del condotto. Lo spostamento non può superare il margine che tiene il condotto a cavallo della mezzeria e dentro il limite c: un valore troppo grande viene riportato automaticamente al limite.
+
+---
+
+## 6. Massa
+
+`condotti/massa.py` stima la massa del cubo per ogni progetto. Voci:
+
+- **guscio**, a spessore equivalente;
+- **telaio**: longheroni sugli spigoli, meno i tratti tolti ai vertici;
+- **condotti, alloggiamenti delle ventole, staffe**: una staffa ogni 100 mm di condotto, più una per curva;
+- **flange e griglie delle bocche**;
+- **motori, ESC, cavi, viteria**;
+- **componenti fissi**, da `COMPONENTI` e `MASSE_FISSE`.
+
+Come entra nell'analisi:
+
+- **Obiettivo** (`massa_obiettivo_kg`, 4 kg): sopra dà un avviso e un punteggio "massa" più basso.
+- **Massima** (`massa_massima_kg`): sopra il progetto **non è ammissibile**. Il valore predefinito è la massa usata per la spinta: oltre quella, la spinta di progetto non basta più.
+- **Spinta**: viene ricontrollata con la massa stimata (riga "forza pura disponibile / richiesta").
+
+Tutti i parametri di `TELAIO` e le masse dei componenti sono **SEGNAPOSTO**. Il valore assoluto della massa dipende soprattutto da loro. Le **differenze tra scenari** sono la parte affidabile: mostrano quanto costa, in massa, ogni configurazione di condotti.
+
+---
+
+## 7. INPUT.py: come si modifica
 
 **Regole di base**
 
@@ -193,14 +326,12 @@ I motori vengono scelti per ogni geometria: la combinazione con la potenza minim
 
 | Chiave | Cosa fa |
 |---|---|
-| `diametri_mm` | lista dei diametri del condotto alla ventola da provare, in ordine crescente |
+| `diametri_mm` | lista dei diametri del condotto alla ventola da provare, in ordine crescente (vedi [regola di potatura](#diametri-regola-di-potatura)) |
 | `sigma` | rapporti d'area dell'uscita da provare (Venturi) |
 | `pesi` | peso di ciascun criterio nel punteggio: spazio, perdite, semplicità, robustezza, dinamica, massa |
 | `scala_volume_libero`, `scala_potenza_asse_W`, `scala_tempo_salita_s` | soglie che trasformano una misura in punteggio da 0 a 1 |
 
 I pesi si possono cambiare anche nell'Excel (foglio **Classifica**, celle gialle): il punteggio totale e la posizione sono formule.
-
-**Come agisce la lista dei diametri.** Per ogni variante geometrica si sale con il diametro. Il primo diametro che rende lo spazio non ammissibile (condotti che si intersecano, moduli riservati, bocche nelle zone centrali, componenti che non entrano) ferma la salita per quella variante: i diametri successivi non vengono analizzati. Motore, Mach e massa **non** fermano la salita: per ora si analizzano tutti i diametri della lista.
 
 ### Sezione 11 — SCENARI
 
@@ -214,21 +345,13 @@ Ogni scenario è un blocco `{...}` nella lista `SCENARI`.
 | `topologia` | uno tra `sfalsati`, `spigoli_corti`, `spigoli_centrati` |
 | `varianti_geometria` | liste di valori: l'ottimizzatore prova tutte le combinazioni |
 
-**Lo scenario S4 (`S4_SPIGOLI_CENTRATI_12`)** è quello della tua foto. Ha tre parametri che puoi cambiare:
-
-- `lunghezza_frazione` (default 0.8): lunghezza del condotto in frazione del massimo consentito. Con 1 il condotto arriva al limite, con valori piccoli si accorcia.
-- `spostamento_frazione` (default 0.0): spostamento lungo lo spigolo. Con 0 il condotto è centrato e il pezzo conserva i tre piani di simmetria. Valori negativi o positivi lo spostano verso i due vertici e rompono la simmetria.
-- `posizione_ventola_frazione` (default 0.3): posizione della ventola lungo il condotto, dalla presa.
-
-La griglia `varianti_geometria` provata di default è: lunghezza `[0.7, 0.8, 0.9, 1.0]` × spostamento `[-0.5, 0.0, 0.5]`, cioè 12 varianti. Per cambiarle modifica le due liste.
-
-Il limite fisico dello spostamento è dentro il codice: il condotto deve restare a cavallo della mezzeria dello spigolo e non superare la distanza c dal vertice. Un valore troppo grande viene riportato automaticamente al limite.
+I parametri di S4 sono descritti in [S4, spigoli centrati](#s4-spigoli-centrati-come-funziona).
 
 **Per escludere uno scenario**: cambia `"attivo": True` in `"attivo": False` nel suo blocco. I dati restano nel file.
 
 ---
 
-## 3. RUN.py: cosa fa
+## 8. RUN.py: cosa fa
 
 Il file ha un solo scopo: eseguire le analisi e salvare i risultati. Non si modifica.
 
@@ -243,14 +366,14 @@ python RUN.py --input altro.py    # usa un altro file di input
 **Cosa fa in ordine**
 
 1. **Verifiche fisiche.** Esegue 37 controlli del codice contro risultati noti (attrito, bilancio di potenza, affinità delle ventole, simmetria dei condotti, rotazione a 120°, massa di un tubo). Se uno fallisce, la run si ferma: non vanno usati risultati di un codice che non passa i controlli.
-2. **Analisi per ogni scenario attivo.** Per ogni variante geometrica e per ogni diametro: geometria, componenti, ventola, motore, dinamica, struttura, massa, punteggio. Il progetto migliore dello scenario è quello ammissibile con il punteggio più alto. Se nessuno è ammissibile, viene riportato il meno peggio con le violazioni.
+2. **Analisi per ogni scenario attivo.** Per ogni lato del cubo, variante geometrica e diametro: geometria, componenti, ventola, motore, dinamica, struttura, massa, punteggio. Il progetto migliore dello scenario è quello ammissibile con il punteggio più alto. Se nessuno è ammissibile, viene riportato il meno peggio con le violazioni.
 3. **Grafici** per scenario e di confronto.
 4. **Excel** con tutti i fogli.
 5. **Riepilogo** nella cartella e a schermo.
 
-**Tempi.** Il tempo è circa il numero di lati dell'intervallo per il tempo di una run a lato fisso. Con 8 lati la run completa dura molto di più di prima (diverse decine di minuti, ore con griglie di varianti fitte). Per le prove usa `"modalita": "veloce"`, che analizza un lato su due, o riduci l'intervallo o aumenta il passo.
+**Tempi.** Il tempo è circa il numero di lati dell'intervallo per il tempo di una run a lato fisso. Con 8 lati la run completa dura diverse decine di minuti, ore con griglie di varianti fitte. Per le prove usa `"modalita": "veloce"`, che analizza un lato su due, o riduci l'intervallo o aumenta il passo.
 
-**Come leggere il log (righe nel terminale).**
+**Come leggere il log (righe nel terminale)**
 
 | Riga | Significato |
 |---|---|
@@ -269,7 +392,7 @@ Il riepilogo finale elenca gli scenari dal migliore, con punteggio, lato L, diam
 
 ---
 
-## 4. La cartella output
+## 9. La cartella output
 
 Ogni run crea una cartella nuova, mai sovrascritta:
 
@@ -281,7 +404,7 @@ output/AAAAMMGG-HHMMSS_<etichetta>_<impronta>/
 - **etichetta**: quella scritta in `ESECUZIONE["etichetta"]`, altrimenti automatica (spinta, lato, ambiente, numero di scenari);
 - **impronta**: 8 caratteri ricavati dagli input. Due cartelle con la stessa impronta sono state prodotte con gli stessi dati.
 
-Per le tue prove la cartella da guardare è l'ultima per data. Le run precedenti restano lì.
+La cartella da guardare è l'ultima per data. Le run precedenti restano lì.
 
 ### Contenuto
 
@@ -309,7 +432,7 @@ Nella cartella `output/` c'è anche **`registro_esecuzioni.csv`**: una riga per 
 | Foglio | Cosa contiene | Quando guardarlo |
 |---|---|---|
 | **Leggimi** | come si legge il file, dati di missione e massa | prima di tutto |
-| **Classifica** | punteggi per criterio, totale pesato, posizione. Pesi modificabili nelle celle gialle | per capire chi vince e perché |
+| **Classifica** | punteggi per criterio, totale pesato, posizione, lato ottimo. Pesi modificabili nelle celle gialle | per capire chi vince e perché |
 | **Progetto ottimo** | tutti i numeri del progetto migliore di ogni scenario, con unità | per leggere un progetto nel dettaglio |
 | **Fluidodinamica** | punto di lavoro della ventola: giri, portata, pressione, rendimento, potenza | per verificare che la ventola lavori in una zona sensata |
 | **Perdite** | ripartizione della potenza tra griglie, imbocco, attrito, curve, ugello, energia del getto | per capire dove si perde potenza |
@@ -328,6 +451,8 @@ Nota: nel terminale di Windows i nomi con accenti possono comparire storti (per 
 
 ### Grafici per scenario (`grafici/<scenario>/`)
 
+Tutti al lato ottimo dello scenario.
+
 | File | Cosa mostra |
 |---|---|
 | `01_viste_layout.svg` | vista dall'alto, di fronte, di lato e 3D del layout. Tratteggio: volumetti tolti ai vertici |
@@ -335,7 +460,7 @@ Nota: nel terminale di Windows i nomi con accenti possono comparire storti (per 
 | `03_profili_ambienti.svg` | gli stessi profili negli ambienti di volo e di laboratorio |
 | `04_mappa_ventola.svg` | curve della ventola e del sistema, con il punto di progetto |
 | `05_spinta_giri_potenza.svg` | spinta in funzione dei giri, della pressione e della potenza elettrica |
-| `06_perdite.svg` | ripartizione della potenza utile della ventola |
+| `06_perdite.svg` | ripartizione della potenza utile della ventola (perdite ed energia del getto) |
 | `07_salita_spinta.svg` | tempo per raggiungere il 90 % della spinta, con il limite di corrente |
 | `08_campbell.svg` | diagramma di Campbell: risonanze che il condotto attraversa |
 | `09_ingestione.svg` | indice di riaspirazione per ogni comando su più assi |
@@ -360,12 +485,12 @@ Nota: nel terminale di Windows i nomi con accenti possono comparire storti (per 
 
 ### Dati
 
-- **`dati/riepilogo.json`**: per ogni scenario il progetto migliore, con diametro, variante, punteggi, violazioni, avvisi e voci di massa. Si legge con un editor di testo o con Python.
+- **`dati/riepilogo.json`**: per ogni scenario il progetto migliore, con lato del cubo (`L_mm`), diametro, variante, punteggi, violazioni, avvisi e voci di massa. Si legge con un editor di testo o con Python.
 - **`dati/progetti.csv`**: una riga per ogni progetto valutato, con lato del cubo (`L_mm`), diametro, variante, ammissibilità, punteggio, potenza e massa. Separatore `;`, si apre direttamente con Excel in italiano.
 
 ---
 
-## 5. Come leggere un risultato
+## 10. Come leggere un risultato
 
 Ordine consigliato, per non perdere il filo:
 
@@ -384,7 +509,7 @@ Il punteggio totale viene per ultimo: dipende dai pesi, che sono una scelta del 
 
 ---
 
-## 6. Come confrontare due run
+## 11. Come confrontare due run
 
 Ogni cartella di output contiene `INPUT_usato.py`: il file esatto usato per quella run.
 
@@ -395,18 +520,31 @@ Ogni cartella di output contiene `INPUT_usato.py`: il file esatto usato per quel
 
 ---
 
-## 7. Cosa non fidarsi ancora
+## 12. Limiti e cosa non fidarsi ancora
 
-- **Valori SEGNAPOSTO**: motori, curve delle ventole, masse dei componenti, parametri del telaio, dimensioni dei moduli. Il peso assoluto della massa dipende soprattutto da questi.
+- **Valori SEGNAPOSTO**: motori, curve delle ventole, masse dei componenti, parametri del telaio, dimensioni dei moduli. Vanno sostituiti con schede tecniche e pesate. Il valore assoluto della massa dipende soprattutto da questi.
+- **Curve delle ventole**: sono forme generiche. Appena scelta la ventola, inserire la curva misurata (`TIPI_VENTOLA`, chiave `tabella`).
 - **Stime di screening**: effetto di sistema, indice di riaspirazione, perdita dei volumetti d'angolo. Vanno confermate con CFD o al banco.
+- **Volumetti d'angolo**: i condotti sboccano in aria libera; la perdita di sbocco e l'eventuale riaspirazione dei getti sono stimate, non misurate.
+- **Modello 1D**: non vede distacchi di vena locali, disuniformità del getto, interazioni tra getti vicini oltre l'indice.
 - **Ipotesi sullo stop dei diametri**: per l'ingombro è dimostrata (cresce con D). Per motore, Mach e massa non si applica lo stop.
 - **Massa di S4**: 4,56 kg, sopra l'obiettivo di 4 kg. Il margine dipende dalle stime sopra.
 - **Chiavi non collegate**: `centro_di_massa_mm`, `tempo_salita_spinta_max_s`, `capacita_Wh`. Non cambiano nessun risultato.
 
 ---
 
-## 8. Checklist della prima prova
+## 13. Per estendere
 
+- **Nuovo scenario con una topologia esistente**: copiare un blocco nella sezione 11 di `INPUT.py`.
+- **Nuova topologia**: scrivere un generatore in `condotti/scenari.py` che restituisce un `Layout`, poi registrarlo in `GENERATORI`.
+- **Nuovo elemento** (per esempio un filtro): una classe in `condotti/rete.py` con `dp()` e la velocità di riferimento dichiarata, da inserire in `condotti/costruttore.py`.
+- **Nuova correlazione**: in `condotti/perdite.py`, con fonte, velocità di riferimento e campo di validità, più un test in `condotti/verifiche.py`.
+
+---
+
+## 14. Checklist della prima prova
+
+- [ ] `pip install -r requirements.txt`
 - [ ] `INPUT.py`: `modalita` su `"veloce"`, `verifiche_fisiche` su `True`
 - [ ] `python RUN.py` finisce con `Finito in … s`
 - [ ] Nel terminale: `37/37 verifiche superate`
