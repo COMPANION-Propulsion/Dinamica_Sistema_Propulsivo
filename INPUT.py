@@ -83,8 +83,8 @@ AMBIENTE_PROGETTO = "volo_20C"
 GEOMETRIA = {
     # Il lato del cubo NON è un dato: l'analisi lo cerca dentro questo intervallo, per ogni scenario.
     # Il lato ottimo di ogni scenario compare nel terminale, nell'Excel e nei dati di output.
-    "lato_cubo_min_mm": 280.0,      # limite inferiore dell'intervallo (mm)
-    "lato_cubo_max_mm": 350.0,      # limite superiore (mm)
+    "lato_cubo_min_mm": 320.0,      # limite inferiore dell'intervallo (mm)
+    "lato_cubo_max_mm": 360.0,      # limite superiore (mm)
     "lato_cubo_passo_mm": 10.0,     # passo: ogni lato in più allunga la run (280-350 con passo 10 = 8 lati)
     "parete_cubo_mm": 3.0,          # SEGNAPOSTO: ingombro della parete (per lo spazio interno)
     "parete_condotto_mm": 1.2,      # SEGNAPOSTO: stampa 3D, >= 0,8 mm per FDM

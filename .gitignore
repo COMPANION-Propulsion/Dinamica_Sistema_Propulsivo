@@ -1,2 +1,5 @@
 __pycache__/
 *.pyc
+
+# Risultati delle run: non sincronizzare
+output/
