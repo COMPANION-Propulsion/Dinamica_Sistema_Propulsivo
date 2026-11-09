@@ -1,6 +1,7 @@
-"""INPUT dell'analisi dei condotti di COMPANION.
+"""INPUT S4 dell'analisi dei condotti di COMPANION: solo la configurazione S4 (spigoli centrati).
 
-QUESTO È L'UNICO FILE DA MODIFICARE.  Dopo averlo salvato si lancia RUN.py.
+È il file da modificare per l'analisi di S4.  Dopo averlo salvato si lancia RUN_S4_interazione.py
+oppure RUN_S4_dinamica.py.  Il confronto S1, S2, S3 ha un input suo: INPUT_generico.py.
 
 Sezioni, nell'ordine in cui conviene leggerle:
    0  ESECUZIONE        che cosa eseguire e come (veloce / completa)
@@ -14,7 +15,7 @@ Sezioni, nell'ordine in cui conviene leggerle:
    8  LIMITI            Mach, velocità di punta, ingestione, ruote
    9  MATERIALI         materiali di condotti e guscio, carichi
   10  OTTIMIZZAZIONE    diametri provati, pesi della classifica
-  11  SCENARI           le configurazioni dei condotti da confrontare
+  11  SCENARI           solo S4, con i suoi parametri (lunghezza e spostamento)
 
 Fonti indicate accanto ai valori:
   [PIL]  indicazioni di Pilone riportate nella conversazione
@@ -84,8 +85,8 @@ GEOMETRIA = {
     # Il lato del cubo NON è un dato: l'analisi lo cerca dentro questo intervallo, per ogni scenario.
     # Il lato ottimo di ogni scenario compare nel terminale, nell'Excel e nei dati di output.
     "lato_cubo_min_mm": 320.0,      # limite inferiore dell'intervallo (mm)
-    "lato_cubo_max_mm": 360.0,      # limite superiore (mm)
-    "lato_cubo_passo_mm": 10.0,     # passo: ogni lato in più allunga la run (280-350 con passo 10 = 8 lati)
+    "lato_cubo_max_mm": 340.0,      # limite superiore (mm)
+    "lato_cubo_passo_mm": 20.0,     # passo: ogni lato in più allunga la run (320-340 con passo 20 = 2 lati)
     "parete_cubo_mm": 3.0,          # SEGNAPOSTO: ingombro della parete (per lo spazio interno)
     "parete_condotto_mm": 1.2,      # SEGNAPOSTO: stampa 3D, >= 0,8 mm per FDM
     "gioco_tra_condotti_mm": 5.0,   # SEGNAPOSTO
@@ -136,7 +137,7 @@ MASSE_FISSE = {
 # Ogni configurazione si porta dietro una massa strutturale diversa: condotti più lunghi,
 # curve, staffe, fori nel guscio, tacche e blocchi di vertice.  Dettaglio delle voci in condotti/massa.py.
 TELAIO = {
-    "materiale_guscio": "PETG (FDM)",       # uno dei MATERIALI (sezione 9)
+    "materiale_guscio": "PA12 (SLS)",       # uno dei MATERIALI (sezione 9): materiale della struttura portante di S4
     "spessore_equivalente_guscio_mm": 1.0,  # massa del pannello / (area · densità): pannello nervato o sandwich
     "massa_longherone_g_per_m": 50.0,       # longheroni sugli spigoli (profilo a L 10x10x1 in alluminio ≈ 54 g/m)
     "massa_nodo_g": 12.0,                   # nodo d'angolo (8 vertici)
@@ -234,7 +235,7 @@ MATERIALI = {
     "resina tenace (SLA)": dict(E=2.5e9, nu=0.38, rho=1180.0, sigma_snervamento=55e6, stampabile_max_mm=200.0),
     "alluminio 6061":      dict(E=69e9, nu=0.33, rho=2700.0, sigma_snervamento=276e6, stampabile_max_mm=1000.0),
 }
-MATERIALE_CONDOTTO = "PETG (FDM)"
+MATERIALE_CONDOTTO = "PA12 (SLS)"       # il più leggero tra i materiali stampabili elencati
 CARICHI = {"g_ipergravita": 1.8, "g_atterraggio_emergenza": 9.0}   # [EUG] 1,8 g; [ESA] carichi d'emergenza
 
 # =============================================================================
@@ -242,14 +243,17 @@ CARICHI = {"g_ipergravita": 1.8, "g_atterraggio_emergenza": 9.0}   # [EUG] 1,8 g
 # =============================================================================
 OTTIMIZZAZIONE = {
     "diametri_mm": [26, 30, 34, 38, 42, 46, 50, 55, 60],   # diametri del condotto alla ventola provati
-    "sigma": [0.70, 0.80, 0.90, 1.00],                    # A_uscita / A_ventola (Venturi)
+    "sigma": [1.00],                                      # A_uscita / A_ventola: 1 = niente Venturi (per ora)
     "pesi": {                                             # peso dei criteri nel punteggio (somma libera)
         "spazio": 0.30,          # volume libero dopo i componenti
         "perdite": 0.25,         # potenza elettrica per la spinta richiesta e quota di perdite
         "semplicita": 0.25,      # realizzabilità e numero di parti
         "robustezza": 0.10,      # tolleranza ai guasti
-        "dinamica": 0.10,        # tempo di salita, desaturazione, ingestione
+        "dinamica": 0.00,        # tempo di salita, desaturazione: ESCLUSA per ora (si analizza solo l'interazione)
         "massa": 0.20,           # massa totale stimata: 1 all'obiettivo o sotto, 0 alla massa massima
+        "ingestione": 1.50,      # i getti non devono rientrare nelle prese vicine: peso molto alto (modificabile).
+                                 #   Punteggio 1 sotto "indice_ingestione_attenzione" (0,05), 0 sopra
+                                 #   "indice_ingestione_critico" (0,20), lineare in mezzo. NON è un vincolo.
     },
     # scale dei punteggi (0 al primo valore, 1 al secondo)
     "scala_volume_libero": (0.40, 0.80),
@@ -269,58 +273,11 @@ REALIZZABILITA = {
 # =============================================================================
 # Campi obbligatori: id, nome, topologia, descrizione.  "attivo": False esclude lo scenario.
 # Topologie disponibili (generatori in condotti/scenari.py):
-#   sfalsati           condotti dritti lungo tutto il lato, sfalsamento ciclico
-#   spigoli_corti      condotti lunghi mezzo spigolo, presa laterale a metà spigolo
 #   spigoli_centrati   condotti sugli spigoli, accorciati e/o spostati, volumetti tolti ai vertici
 # "varianti_geometria": liste di valori da provare tutti (prodotto cartesiano) per trovare l'ottimo.
+#   Per fissare un parametro basta una lista con un solo valore (o con gli estremi uguali).
 # Per aggiungere uno scenario: copiare un blocco, cambiare id e parametri.
 SCENARI = [
-    {
-        "id": "S1_SFALSATI_12",
-        "attivo": True,
-        "nome": "12 condotti dritti sfalsati (modello interattivo)",
-        "topologia": "sfalsati",
-        "origine": "Modello interattivo precedente (schizzo con intersezione risolta)",
-        "descrizione": ("12 condotti dritti, 4 per asse, lungo tutto il lato. Ognuno è a filo di una faccia e "
-                        "arretrato dall'altra di un diametro esterno più il gioco, a rotazione (X lungo Z, Y lungo "
-                        "X, Z lungo Y). Ventole unidirezionali: per ogni verso lavora una coppia diagonale, con "
-                        "eliche controrotanti. Presa sulla faccia opposta all'uscita."),
-        "pregi_attesi": "Nessuna curva; 12 parti uguali; spinta pura con coppie diagonali; coppia disponibile per desaturare.",
-        "difetti_attesi": "12 motori; condotti lunghi quanto il lato (oltre il piatto di stampa); arretramento che ruba spazio.",
-        "reversibile": False,
-        "posizione_ventola_frazione": 0.25,
-        "verso_coppia_D1": -1,
-    },
-    {
-        "id": "S2_SPIGOLI_CORTI_12",
-        "attivo": True,
-        "nome": "12 condotti corti sugli spigoli, presa a metà spigolo",
-        "topologia": "spigoli_corti",
-        "origine": "Proposta dell'utente: condotti sugli spigoli ma non per tutta la lunghezza",
-        "descrizione": ("12 condotti lunghi mezzo spigolo, a filo dei due lati dello spigolo. L'uscita è nel vertice, "
-                        "la presa è a metà spigolo su una faccia adiacente, raggiunta con una curva di 90°: presa e "
-                        "ugello distano circa mezzo lato, così il cubo non riaspira i propri getti. Con la scelta "
-                        "delle parità in ogni vertice arrivano al massimo due condotti; quelli Z rientrano di un "
-                        "diametro per non toccare gli X."),
-        "pregi_attesi": "Metà della lunghezza di condotto; prese lontane dagli ugelli; centro del cubo libero.",
-        "difetti_attesi": "Curva stretta subito prima della ventola (effetto di sistema); 12 motori; prese anche sulla faccia dello sportellino.",
-        "posizione_presa_frazione": 0.0,
-        "raggio_curva_presa_max_su_D": 1.5,
-        "distanza_ventola_da_curva_su_D": 1.0,
-    },
-    {
-        "id": "S3_REVERSIBILI_6",
-        "attivo": True,
-        "nome": "6 ventole reversibili a coppie sfalsate (dal file Excel)",
-        "topologia": "sfalsati",
-        "origine": "Foglio Confronto architetture del compagno (primo nella classifica originale)",
-        "descrizione": ("6 condotti dritti sfalsati, una coppia diagonale per asse; ogni ventola gira nei due versi. "
-                        "Condotto simmetrico senza ugello né statore; per frenare si inverte la rotazione."),
-        "pregi_attesi": "Metà dei condotti e dei motori di S1; più spazio interno; nessuna parte mobile oltre ai rotori.",
-        "difetti_attesi": "Pale simmetriche (circa -10 %); niente Venturi né statore; inversione lenta; coppia dal vortice.",
-        "reversibile": True,
-        "verso_coppia_D1": -1,
-    },
     {
         "id": "S4_SPIGOLI_CENTRATI_12",
         "attivo": True,
@@ -339,9 +296,13 @@ SCENARI = [
         "spostamento_frazione": 0.0,          # 0 = centrato (3 piani di simmetria); >0 verso il verso del suo asse
         "posizione_ventola_frazione": 0.3,    # ventola a questa frazione del condotto, dalla presa
         "verso_coppia_D1": -1,
-        "varianti_geometria": {
-            "lunghezza_frazione": [0.6, 0.7, 0.8, 0.9, 1.0],
-            "spostamento_frazione": [-0.5, -0.4, -0.3, -0.2, -0.1, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
+        # --- struttura portante: pareti piene dietro le facce e una trave piena attorno a ogni condotto
+        "riempimento": 0.20,                  # frazione di riempimento della stampa (0,2 = 20 %): scala la massa
+        "varianti_geometria": {               # ogni lista è un range: si provano tutte le combinazioni (5 x 1 x 3 x 3 = 45)
+            "lunghezza_frazione": [0.6, 0.7, 0.8, 0.9, 1.0],      # lunghezza del condotto / lunghezza massima: se ne cerca l'ottimo
+            "spostamento_frazione": [0.0],                         # estremi uguali = valore fisso: condotto centrato
+            "spessore_parete_faccia_mm": [5.0, 10.0, 15.0],        # parete piena dietro ogni faccia (dalla superficie esterna)
+            "spessore_attorno_condotto_mm": [3.0, 6.0, 10.0],      # materiale tra il condotto e l'esterno della sua trave
         },
     },
 ]

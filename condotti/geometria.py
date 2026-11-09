@@ -68,6 +68,7 @@ class Layout:
     parete: float
     unita: list
     tacche: list = field(default_factory=list)     # [(min, max)] mm: prismi tolti agli spigoli
+    solidi: list = field(default_factory=list)     # [(min, max)] mm: pareti piene e travi portanti attorno ai condotti
     avvisi: list = field(default_factory=list)
     parametri: dict = field(default_factory=dict)
 
@@ -212,7 +213,8 @@ class Griglia3D:
 
 
 # codici di occupazione
-COD_CONDOTTI, COD_RISERVATO, COD_EXTRA, COD_COMP = 1, 2, 3, 4      # EXTRA: tacche e fori di vertice
+COD_CONDOTTI, COD_RISERVATO, COD_EXTRA, COD_COMP, COD_STRUTTURA = 1, 2, 3, 4, 5   # EXTRA: tacche e fori di vertice;
+                                                                                    # STRUTTURA: pareti piene e travi portanti
 
 
 # =========================================================================

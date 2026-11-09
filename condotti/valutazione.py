@@ -61,6 +61,12 @@ def valuta_geometria(sc, D, cfg, variante=None, colloca_componenti=None):
         if n_occ:
             sovrapp[nome] = n_occ * vox ** 3 / 1000.0          # cm^3
         gr.box(mn, mx, G.COD_RISERVATO)
+    # struttura portante: occupa solo i voxel ancora liberi, quindi non tocca i fori dei condotti, i volumetti
+    # né i moduli riservati (che stanno in un'apertura della parete)
+    for mn, mx in lay.solidi:
+        gr.box(mn, mx, G.COD_STRUTTURA)
+    f_struttura = gr.volume_frazione({G.COD_STRUTTURA})
+    V_struttura_mm3 = float(np.count_nonzero(gr.occ == G.COD_STRUTTURA)) * vox ** 3
     f_libero_prima = 1 - gr.volume_frazione()
     viol_facce = _bocche_in_zone_centrali(lay, cfg)
     irrealizzabile = any("IRREALIZZABILE" in a for a in lay.avvisi)
@@ -103,7 +109,8 @@ def valuta_geometria(sc, D, cfg, variante=None, colloca_componenti=None):
     sfera = G.sfera_libera_massima(gr.occ, vox)
     car = RZ.caratteristiche(lay, cfg)
     return {"layout": lay, "D": D, "variante": variante or {}, "gioco_min_mm": gioco, "coppia_critica": coppia,
-            "frazione_condotti": f_condotti, "frazione_extra": f_extra, "frazione_libera_prima": f_libero_prima,
+            "frazione_condotti": f_condotti, "frazione_extra": f_extra,
+            "frazione_struttura": f_struttura, "volume_struttura_mm3": V_struttura_mm3, "frazione_libera_prima": f_libero_prima,
             "frazione_libera_dopo": f_libero_dopo, "sovrapposizioni_zone_cm3": sovrapp,
             "bocche_in_zone_centrali": viol_facce, "componenti": collocati,
             "componenti_tutti": n_ok == len(nomi), "componenti_valutati": bool(colloca_componenti),
@@ -331,7 +338,7 @@ def valuta_completo(gm, aero, cfg, sc, tipo, motore, sigma):
                 "margine_sforzo_9g": mat["sigma_snervamento"] / max(s9, 1.0),
                 "EI_condotti_Nm2": EI})
     # --- massa
-    mb = MA.bilancio_massa(lay, cfg, motore, gm["D"])
+    mb = MA.bilancio_massa(lay, cfg, motore, gm["D"], gm.get("volume_struttura_mm3", 0.0))
     m_tot = mb["totale"]
     mis = cfg["missione"]
     F_req_m = mis["spinta_per_kg_N"] * m_tot
@@ -353,7 +360,7 @@ def valuta_completo(gm, aero, cfg, sc, tipo, motore, sigma):
              + 0.2 * _scala(t_desat, 30.0, 2.0))
     s_massa = _scala(m_tot, mis["massa_massima_kg"], mis["massa_obiettivo_kg"])
     punteggi = {"spazio": s_spazio, "perdite": s_perdite, "semplicita": s_real, "robustezza": s_rob,
-                "dinamica": s_din, "massa": s_massa}
+                "dinamica": s_din, "massa": s_massa, "ingestione": s_ing}
     pesi = ott["pesi"]
     totale = sum(pesi[k] * punteggi[k] for k in pesi) / sum(pesi.values())
     P_ax = max(aero["P_asse_max"], 1e-9)

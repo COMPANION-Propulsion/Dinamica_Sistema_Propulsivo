@@ -199,9 +199,39 @@ def gen_spigoli_centrati(sc, D, sigma, cfg):
                     else:
                         mn[j], mx[j] = -hi, -e
                 volumetti.append((mn, mx))
-    return Layout(sc["id"], L, tw, unita, tacche=volumetti, avvisi=avvisi,
+    # struttura portante (opzionale): pareti piene dietro le 6 facce e una trave attorno a ogni condotto.
+    # La trave è un prisma di sezione quadrata (raggio esterno del condotto + spessore), che arriva fino alle
+    # due facce dello spigolo e va da un'estremità all'altra del condotto; i fori dei condotti restano vuoti.
+    solidi, par_str = [], {}
+    t_f, t_c = sc.get("spessore_parete_faccia_mm"), sc.get("spessore_attorno_condotto_mm")
+    if t_f is not None and t_c is not None:
+        sp_extra = max(float(t_f) - tw, 0.0)           # la parete esterna (tw) è già fuori dalla griglia
+        for A in range(3):
+            for sg in (1, -1):
+                mn, mx = np.full(3, -hi), np.full(3, hi)
+                if (A, sg) == tuple(cfg.get("faccia_sportellino", ())):
+                    continue                                   # lo sportellino della batteria resta aperto (solo pelle)
+                if sg > 0:
+                    mn[A] = hi - sp_extra
+                else:
+                    mx[A] = -hi + sp_extra
+                if sp_extra > 0:
+                    solidi.append((mn, mx))
+        w = Ro + float(t_c)
+        for A in range(3):
+            u, v = (A + 1) % 3, (A + 2) % 3
+            for (su, sv) in SEGNI:
+                mn, mx = np.zeros(3), np.zeros(3)
+                mn[A], mx[A] = delta - ell / 2, delta + ell / 2
+                for j, sg in ((u, su), (v, sv)):
+                    centro = sg * a
+                    mn[j], mx[j] = max(centro - w, -hi), min(centro + w, hi)
+                solidi.append((mn, mx))
+        par_str = {"spessore_parete_faccia_mm": float(t_f), "spessore_attorno_condotto_mm": float(t_c),
+                   "riempimento": float(sc.get("riempimento", 1.0))}
+    return Layout(sc["id"], L, tw, unita, tacche=volumetti, solidi=solidi, avvisi=avvisi,
                   parametri={"lunghezza_condotto_mm": ell, "spostamento_mm": delta, "asse_condotto_mm": a,
-                             "estremita_max_mm": c})
+                             "estremita_max_mm": c, **par_str})
 
 
 GENERATORI = {

@@ -22,9 +22,9 @@ import numpy as np
 
 from .costruttore import _segmenti, _lunghezza_seq
 
-STRUTTURALI = ("guscio", "telaio", "condotti", "alloggiamenti ventola", "staffe", "bocche (flange e griglie)")
+STRUTTURALI = ("guscio", "telaio", "struttura portante", "condotti", "alloggiamenti ventola", "staffe", "bocche (flange e griglie)")
 GRUPPI = {
-    "telaio e guscio": ("guscio", "telaio", "viteria e colla"),
+    "telaio e guscio": ("guscio", "telaio", "struttura portante", "viteria e colla"),
     "condotti e supporti": ("condotti", "alloggiamenti ventola", "staffe", "bocche (flange e griglie)"),
     "propulsione (motori, ESC, cavi)": ("motori e rotori", "regolatori ESC", "cablaggi propulsione"),
     "componenti fissi": ("componenti fissi",),
@@ -40,7 +40,7 @@ def _sul_guscio(pos, h):
     return abs(np.max(np.abs(pos)) - h) < 1.0
 
 
-def bilancio_massa(layout, cfg, motore, D_mm):
+def bilancio_massa(layout, cfg, motore, D_mm, volume_struttura_mm3=0.0):
     te = cfg["telaio"]
     el = cfg["elementi"]
     mat_c = cfg["materiali"][cfg["materiale_condotto"]]
@@ -74,6 +74,16 @@ def bilancio_massa(layout, cfg, motore, D_mm):
     L_long = 12 * L - L_vert
     n_nodi = 8
     voci["telaio"] = te["massa_longherone_g_per_m"] / 1000 * L_long / 1000 + n_nodi * te["massa_nodo_g"] / 1000
+    # --- struttura portante (pareti piene e travi attorno ai condotti): sostituisce guscio, telaio e staffe.
+    # Si stampa con riempimento parziale: la massa è densità x riempimento x volume pieno.
+    portante = "spessore_parete_faccia_mm" in layout.parametri
+    voci["struttura portante"] = 0.0
+    if portante:
+        phi = layout.parametri["riempimento"]
+        skin = (6 * L * L - A_fori - A_vert) * cfg["geometria"]["parete_cubo_mm"]      # mm^3: pelle esterna
+        voci["struttura portante"] = mat_g["rho"] * phi * (volume_struttura_mm3 + skin) * 1e-9
+        voci["guscio"] = 0.0
+        voci["telaio"] = 0.0
     # --- condotti, alloggiamenti, staffe
     m_cond, n_staffe, L_cond = 0.0, 0, 0.0
     for u in layout.unita:
@@ -89,7 +99,7 @@ def bilancio_massa(layout, cfg, motore, D_mm):
     n_stat = sum(1 for u in layout.unita if u.statore and el["statore"])
     voci["alloggiamenti ventola"] = (n * _tubo(mat_c["rho"], D_mm, t_h, L_f)
                                      + n_stat * te["massa_statore_g_a_D30"] / 1000 * (D_mm / 30) ** 2)
-    voci["staffe"] = n_staffe * te["massa_staffa_g_a_D30"] / 1000 * D_mm / 30
+    voci["staffe"] = 0.0 if portante else n_staffe * te["massa_staffa_g_a_D30"] / 1000 * D_mm / 30
     # --- bocche
     w, t_f = te["larghezza_flangia_bocca_mm"], te["spessore_flangia_bocca_mm"]
     m_fl = sum(mat_g["rho"] * t_f / 1000 * math.pi * ((d / 2 + w) ** 2 - (d / 2) ** 2) * 1e-6 for d in fori)

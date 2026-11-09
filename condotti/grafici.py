@@ -617,3 +617,38 @@ def grafico_massa(ott, cfg, percorso, formati):
     ax.legend(fontsize=7)
     fig.tight_layout()
     return _salva(fig, percorso, formati)
+
+
+# =========================================================================
+# Sezioni della struttura (per confrontare il modello con il CAD)
+# =========================================================================
+def grafico_sezioni(gm, cfg, titolo, percorso, formati, n=8):
+    """Sezioni del cubo perpendicolari a Z, dal centro (z = 0) fino alla faccia, come le foto dal CAD.
+
+    Con i tre piani di simmetria della configurazione base le sezioni sugli altri assi sono uguali.
+    Colori: bianco = spazio libero, blu = condotti, arancio = struttura piena (pareti e travi),
+    grigio = volumetti d'angolo asportati.
+    """
+    from matplotlib.colors import ListedColormap
+    gr = gm["griglia"]
+    occ = gm["occ_senza_componenti"]
+    cm = ListedColormap(["#ffffff", "#4c6ef5", "#868e96", "#adb5bd", "#f1f3f5", "#f08c00"])   # codici 0..5
+    k0 = gr.n // 2
+    ks = sorted(set(int(round(k0 + (gr.n - 1 - k0) * f)) for f in np.linspace(0, 1, n)))
+    cols = 4
+    righe = int(math.ceil(len(ks) / cols))
+    fig, assi = plt.subplots(righe, cols, figsize=(3.2 * cols, 3.4 * righe))
+    assi = np.atleast_1d(assi).ravel()
+    h = gr.h_int
+    for ax, k in zip(assi, ks):
+        ax.imshow(occ[:, :, k].T, origin="lower", cmap=cm, vmin=0, vmax=5, extent=(-h, h, -h, h), interpolation="nearest")
+        ax.set_title(f"z = {gr.c[k]:.0f} mm", fontsize=9)
+        ax.set_xticks([]); ax.set_yticks([])
+    for ax in assi[len(ks):]:
+        ax.axis("off")
+    from matplotlib.patches import Patch
+    fig.legend(handles=[Patch(color="#ffffff", ec="k", label="spazio libero"), Patch(color="#4c6ef5", label="condotti (tubo)"),
+                        Patch(color="#f08c00", label="struttura piena"), Patch(color="#adb5bd", label="volumetto d'angolo")],
+               loc="lower center", ncol=4, fontsize=8)
+    fig.suptitle(titolo + " — sezioni dal centro alla faccia", fontsize=11)
+    return _salva(fig, percorso, formati)

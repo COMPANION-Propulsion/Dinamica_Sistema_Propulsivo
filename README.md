@@ -14,8 +14,8 @@ Confronta configurazioni di condotti per il cubo free-flyer e cerca, per ognuna,
 4. [Cosa calcola](#4-cosa-calcola)
 5. [Scenari](#5-scenari)
 6. [Massa](#6-massa)
-7. [INPUT.py: come si modifica](#7-inputpy-come-si-modifica)
-8. [RUN.py: cosa fa](#8-runpy-cosa-fa)
+7. [I file di input: come si modificano](#7-inputpy-come-si-modifica)
+8. [Le run: cosa fanno](#8-le-run-cosa-fanno)
 9. [La cartella output](#9-la-cartella-output)
 10. [Come leggere un risultato](#10-come-leggere-un-risultato)
 11. [Come confrontare due run](#11-come-confrontare-due-run)
@@ -37,21 +37,30 @@ Dipendenze: `numpy`, `scipy`, `matplotlib`, `openpyxl` (versioni minime in `requ
 
 ## 2. Come si usa
 
-Tre cose da usare, nient'altro:
+Due file di input, tre run, una cartella di output:
 
-| Cosa | Dove | A cosa serve |
+| Cosa | File | A cosa serve |
 |---|---|---|
-| Input | `INPUT.py` | **l'unico file da modificare.** Tutti i dati e tutti gli scenari, in sezioni numerate (0 esecuzione … 11 scenari). Ogni valore ha la fonte; `SEGNAPOSTO` = da sostituire con un dato vero |
-| Run | `RUN.py` | **l'unico script da lanciare** (`python RUN.py` o il tasto Run dell'editor). Fa le verifiche fisiche, l'analisi, i grafici e l'Excel |
-| Output | `output/` | una cartella nuova per ogni run |
+| Input generico | `INPUT_generico.py` | dati e scenari **S1, S2, S3** (sezioni numerate 0 esecuzione … 11 scenari) |
+| Input S4 | `INPUT_S4.py` | gli stessi dati, con la sola configurazione **S4** (spigoli centrati) e i suoi parametri: `lunghezza_frazione`, `spostamento_frazione` e le loro varianti |
+| Input dinamica S4 | `INPUT_S4_dinamica.py` | dati della dinamica di volo: massa, spinta massima e tempo di salita (copiati dall'ultima run di interazione), manovra, disturbo, regolatore, energia, ruote |
+| Run generica | `RUN_generica.py` | confronto S1, S2, S3: legge `INPUT_generico.py`; grafici di scenario e di confronto, Excel |
+| Run S4 interazione | `RUN_S4_interazione.py` | solo S4, legge `INPUT_S4.py`; grafici su viste, profili, perdite, riaspirazione dei getti. Nessun confronto (c'è un solo scenario) |
+| Run S4 dinamica | `RUN_S4_dinamica.py` | dinamica di volo di S4, legge `INPUT_S4_dinamica.py` (indipendente dall'analisi): tre assi in parallelo, massa nel baricentro, regolatore PD, disturbo del volo parabolico. Dà errore di posizione, uso della spinta, energia, spazio massimo e tempo minimo, tempo di salita, margine di fase, ruote di reazione |
+| Output | `output/` | una cartella nuova per ogni run, con il nome della run all'inizio |
+
+Si modifica solo il file di input della run che si lancia. Ogni run fa le verifiche fisiche, l'analisi e l'Excel.
 
 ```bash
-python RUN.py
+python RUN_generica.py
+python RUN_S4_interazione.py
+python RUN_S4_dinamica.py        # dinamica di volo: ~4 secondi
 ```
 
-- Prove rapide: in `INPUT.py` metti `ESECUZIONE["modalita"] = "veloce"`.
-- Escludere uno scenario: `"attivo": False` nel suo blocco in fondo a `INPUT.py`.
+- Prove rapide: nel file di input metti `ESECUZIONE["modalita"] = "veloce"`, oppure lancia la run con `--veloce`.
+- Escludere uno scenario (solo nell'input generico): `"attivo": False` nel suo blocco in fondo al file.
 - Le verifiche fisiche (37 controlli contro risultati noti) girano prima dell'analisi: se una fallisce l'analisi non parte.
+- I due input hanno la stessa struttura: un valore comune (per esempio la massa) va cambiato in **entrambi**.
 
 Tutto il resto sta nella cartella `condotti/` e non va toccato per l'uso normale.
 
@@ -61,14 +70,14 @@ Tutto il resto sta nella cartella `condotti/` e non va toccato per l'uso normale
 
 Per vedere il meccanismo senza aspettare la run completa:
 
-1. In `INPUT.py`, sezione 0, cambia `"modalita": "completa"` in `"modalita": "veloce"`.
+1. In `INPUT_generico.py` (o `INPUT_S4.py`), sezione 0, cambia `"modalita": "completa"` in `"modalita": "veloce"`.
 2. Da terminale, nella cartella del progetto:
 
    ```bash
-   python RUN.py
+   python RUN_generica.py
    ```
 
-   oppure con il tasto Run di VS Code su `RUN.py`.
+   oppure con il tasto Run di VS Code su `RUN_generica.py` (per S4: `RUN_S4_interazione.py` o `RUN_S4_dinamica.py`).
 
 3. A fine esecuzione, nel terminale compare il riepilogo. Apri l'ultima cartella in `output/` e il file `excel/Confronto_scenari.xlsx`, foglio **Classifica**.
 4. Quando hai finito, rimetti `"modalita": "completa"`. La modalità veloce dimezza diametri, valvole e varianti: i numeri non sono quelli definitivi.
@@ -110,7 +119,7 @@ Motore, Mach, potenza e massa **non** attivano lo stop: per ora tutti i diametri
 
 ### Lato del cubo: è un risultato, non un dato
 
-In `INPUT.py`, sezione 3, il lato del cubo non è un numero: si indica l'**intervallo** da analizzare (`lato_cubo_min_mm`, `lato_cubo_max_mm`, `lato_cubo_passo_mm`; vedi [sezione 3 di INPUT.py](#sezione-3--cubo)).
+Negli input, sezione 3, il lato del cubo non è un numero: si indica l'**intervallo** da analizzare (`lato_cubo_min_mm`, `lato_cubo_max_mm`, `lato_cubo_passo_mm`; vedi [sezione 3 di INPUT.py](#sezione-3--cubo)).
 
 Per ogni scenario l'ottimizzatore ripete tutta la ricerca (varianti × diametri) a ogni lato dell'intervallo. L'ottimo è il progetto ammissibile con il punteggio più alto; a parità di punteggio vince il condotto più centrato, poi il cubo più piccolo.
 
@@ -136,7 +145,27 @@ Ai vertici si toglie un volumetto d'angolo, dalle estremità dei condotti alla f
 | `posizione_ventola_frazione` | 0.3 | posizione della ventola lungo il condotto, dalla presa |
 | `varianti_geometria` | — | i valori da provare (prodotto cartesiano): l'ottimizzatore prova tutte le combinazioni |
 
-La griglia `varianti_geometria` provata di default è: lunghezza `[0.7, 0.8, 0.9, 1.0]` × spostamento `[-0.5, 0.0, 0.5]`, cioè 12 varianti. Per cambiarle modifica le due liste.
+In `INPUT_S4.py` la griglia `varianti_geometria` provata di default è: lunghezza `[0.6, 0.7, 0.8, 0.9, 1.0]` × spostamento `[0.0]` (fisso: condotto centrato) × spessore parete faccia `[5, 10, 15]` mm × spessore attorno al condotto `[3, 6, 10]` mm, cioè 45 varianti. Per cambiarle modifica le liste; una lista con un solo valore, o con gli estremi uguali, fissa il parametro.
+
+#### Struttura portante di S4 (pareti piene e condotti portanti)
+
+Se tra i parametri di S4 ci sono i due spessori, il cubo non è più un guscio sottile con i tubi dentro: è un corpo con pareti e travi piene, e lo spazio per i componenti è la cavità che resta.
+
+| Parametro | Significato |
+|---|---|
+| `spessore_parete_faccia_mm` | parete piena dietro ogni faccia, misurata dalla superficie esterna. La faccia dello sportellino della batteria resta aperta (solo la pelle esterna) |
+| `spessore_attorno_condotto_mm` | materiale tra il condotto e l'esterno della sua trave. La trave è un prisma di sezione quadrata attorno a ogni condotto, da un'estremità all'altra, appoggiato alle due facce dello spigolo; il foro del condotto resta vuoto |
+| `riempimento` | frazione di riempimento della stampa (0,2 = 20 %): la massa della struttura è densità × riempimento × volume pieno |
+
+- I volumetti d'angolo e i moduli riservati dietro le facce (camere, aggancio, docking) restano vuoti: la struttura non li occupa.
+- Con la struttura portante, **guscio, telaio e staffe valgono zero** nel bilancio di massa: sono sostituiti dalla voce *struttura portante* (compresa la pelle esterna `parete_cubo_mm`).
+- Il materiale è quello di `MATERIALE_CONDOTTO` e `TELAIO["materiale_guscio"]`: in `INPUT_S4.py` è PA12 (SLS), il più leggero tra quelli elencati.
+- Il foglio *Massa* dell'Excel e il grafico `10_sezioni_struttura` (sezioni dal centro alla faccia, per confrontare il modello con il CAD) mostrano il risultato.
+- Le dimensioni dell'incavo che si vede a metà dei lati nel CAD non sono un parametro: nascono dagli spessori e dal diametro dei condotti.
+
+#### Punteggio di ingestione
+
+Il criterio `ingestione` (in `pesi`) valuta l'indice di riaspirazione peggiore tra tutti i comandi: 1 sotto `indice_ingestione_attenzione` (0,05), 0 sopra `indice_ingestione_critico` (0,20), lineare in mezzo. Non è un vincolo: un progetto con indice alto resta ammissibile, ma prende un punteggio basso. In `INPUT_S4.py` il peso è 1,5 (molto alto) e quello della dinamica è 0.
 
 Il limite delle estremità, da cui dipendono sia accorciamento sia spostamento, è c = a − (2·Ro + gioco), con a la distanza dell'asse dal centro e Ro il raggio esterno del condotto. Lo spostamento non può superare il margine che tiene il condotto a cavallo della mezzeria e dentro il limite c: un valore troppo grande viene riportato automaticamente al limite.
 
@@ -165,6 +194,8 @@ Tutti i parametri di `TELAIO` e le masse dei componenti sono **SEGNAPOSTO**. Il 
 
 ## 7. INPUT.py: come si modifica
 
+(Vale per `INPUT_generico.py` e `INPUT_S4.py`: stessa struttura, scenari diversi.)
+
 **Regole di base**
 
 - Si cambia solo il valore a destra dei due punti. Non si toccano i nomi delle chiavi (la parola a sinistra, tra virgolette).
@@ -172,7 +203,7 @@ Tutti i parametri di `TELAIO` e le masse dei componenti sono **SEGNAPOSTO**. Il 
 - Le stringhe vanno tra virgolette: `"completa"`.
 - `True` / `False` senza virgolette. `None` (nessun valore) senza virgolette.
 - I commenti dopo `#` sono solo note: si possono leggere, non cambiano nulla.
-- Dopo ogni modifica si salva e si lancia `RUN.py`. Ogni run copia il file usato in `INPUT_usato.py`: così sai sempre con quali dati è stato prodotto un risultato.
+- Dopo ogni modifica si salva e si lancia la run corrispondente. Ogni run copia il file usato in `INPUT_usato.py`: così sai sempre con quali dati è stato prodotto un risultato.
 
 **Il marcatore SEGNAPOSTO** nei commenti indica che il valore è una stima da sostituire con un dato vero (scheda tecnica, misura, schema). Le conclusioni sul peso assoluto dipendono molto da questi valori.
 
@@ -351,16 +382,17 @@ I parametri di S4 sono descritti in [S4, spigoli centrati](#s4-spigoli-centrati-
 
 ---
 
-## 8. RUN.py: cosa fa
+## 8. Le run: cosa fanno
 
-Il file ha un solo scopo: eseguire le analisi e salvare i risultati. Non si modifica.
+Le tre run (`RUN_generica.py`, `RUN_S4_interazione.py`, `RUN_S4_dinamica.py`) hanno un solo scopo: eseguire le analisi e salvare i risultati. Non si modificano. La sequenza è comune e sta in `condotti/esecuzione.py`; le run differiscono per file di input, grafici prodotti e presenza dei grafici di confronto (solo la generica).
 
 **Comandi**
 
 ```bash
-python RUN.py                     # usa INPUT.py con i valori di ESECUZIONE
-python RUN.py --veloce            # come modalita = "veloce", senza toccare il file
-python RUN.py --input altro.py    # usa un altro file di input
+python RUN_generica.py                     # usa INPUT_generico.py con i valori di ESECUZIONE
+python RUN_generica.py --veloce            # come modalita = "veloce", senza toccare il file
+python RUN_generica.py --input altro.py    # usa un altro file di input
+# stessi argomenti per RUN_S4_interazione.py (input predefinito: INPUT_S4.py) e RUN_S4_dinamica.py (INPUT_S4_dinamica.py, senza --veloce)
 ```
 
 **Cosa fa in ordine**
@@ -535,7 +567,7 @@ Ogni cartella di output contiene `INPUT_usato.py`: il file esatto usato per quel
 
 ## 13. Per estendere
 
-- **Nuovo scenario con una topologia esistente**: copiare un blocco nella sezione 11 di `INPUT.py`.
+- **Nuovo scenario con una topologia esistente**: copiare un blocco nella sezione 11 di `INPUT_generico.py` (o `INPUT_S4.py`).
 - **Nuova topologia**: scrivere un generatore in `condotti/scenari.py` che restituisce un `Layout`, poi registrarlo in `GENERATORI`.
 - **Nuovo elemento** (per esempio un filtro): una classe in `condotti/rete.py` con `dp()` e la velocità di riferimento dichiarata, da inserire in `condotti/costruttore.py`.
 - **Nuova correlazione**: in `condotti/perdite.py`, con fonte, velocità di riferimento e campo di validità, più un test in `condotti/verifiche.py`.
@@ -545,8 +577,8 @@ Ogni cartella di output contiene `INPUT_usato.py`: il file esatto usato per quel
 ## 14. Checklist della prima prova
 
 - [ ] `pip install -r requirements.txt`
-- [ ] `INPUT.py`: `modalita` su `"veloce"`, `verifiche_fisiche` su `True`
-- [ ] `python RUN.py` finisce con `Finito in … s`
+- [ ] l'input: `modalita` su `"veloce"`, `verifiche_fisiche` su `True`
+- [ ] `python RUN_generica.py` finisce con `Finito in … s`
 - [ ] Nel terminale: `37/37 verifiche superate`
 - [ ] Ultima cartella in `output/` presente, con `excel/Confronto_scenari.xlsx`
 - [ ] Excel: foglio **Classifica** aperto, vincitore letto

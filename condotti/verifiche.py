@@ -1,6 +1,6 @@
 """Verifiche fisiche automatiche del pacchetto 'condotti'.
 
-RUN.py le esegue prima dell'analisi (ESECUZIONE["verifiche_fisiche"]);
+le run le eseguono prima dell'analisi (ESECUZIONE["verifiche_fisiche"]);
 da sole:  python -m condotti.verifiche
 
 Ogni test confronta il codice con un risultato noto (formula analitica,
@@ -15,7 +15,7 @@ from .aria import crea_aria
 from . import perdite as P
 from . import rete as R
 from .ventole import TipoVentola, Ventola
-from .geometria import dist_segmenti, dist_segmenti_vett, gioco_minimo
+from .geometria import dist_segmenti, dist_segmenti_vett, gioco_minimo, Griglia3D, tubi_unita
 from . import prestazioni as PR
 from . import massa as MA
 from .scenari import gen_spigoli_centrati
@@ -213,6 +213,28 @@ def test_spigoli_centrati():
     verifica("spigoli centrati: invarianti per rotazione di 120 gradi", base == ruotato)
 
 
+def test_struttura_portante():
+    """Pareti piene e travi attorno ai condotti (S4 con spessori)."""
+    cfg = _cfg_geometria()
+    sc = {"id": "p", "lunghezza_frazione": 0.8, "spostamento_frazione": 0.0,
+          "spessore_parete_faccia_mm": 10.0, "spessore_attorno_condotto_mm": 6.0, "riempimento": 0.2}
+    lay = gen_spigoli_centrati(sc, 30.0, 1.0, cfg)
+    verifica("struttura portante: 12 travi + 6 pareti piene", len(lay.solidi) == 18, f"{len(lay.solidi)} solidi")
+    lay0 = gen_spigoli_centrati({"id": "p", "lunghezza_frazione": 0.8}, 30.0, 1.0, cfg)
+    verifica("senza spessori la struttura portante non c'è", len(lay0.solidi) == 0 and "riempimento" not in lay0.parametri)
+    # il foro del condotto resta vuoto: nella griglia l'asse di ogni condotto è un condotto, non struttura
+    gr = Griglia3D(lay.L, lay.parete, 2.0)
+    for u in lay.unita:
+        for p, q, r, _ in tubi_unita(u, cfg["geometria"]["parete_condotto_mm"]):
+            gr.capsula(p, q, r, 1)
+    for mn, mx in lay.solidi:
+        gr.box(mn, mx, 5)
+    centro_foro = [gr.occ[tuple(gr.indice((u.tronco.punti[0] + u.tronco.punti[-1]) / 2))] for u in lay.unita]
+    verifica("struttura portante: il foro di ogni condotto resta libero dalla struttura",
+             all(c == 1 for c in centro_foro))
+    verifica("struttura portante: c'è materiale pieno attorno ai condotti", int((gr.occ == 5).sum()) > 0)
+
+
 def test_lati_del_cubo():
     g = {"lato_cubo_min_mm": 280.0, "lato_cubo_max_mm": 350.0, "lato_cubo_passo_mm": 10.0}
     verifica("lati del cubo: 280-350 passo 10 = 8 valori con gli estremi",
@@ -245,6 +267,34 @@ def test_massa_tubo():
     m = MA._tubo(1270.0, 30.0, 1.2, 100.0)
     atteso = 1270.0 * math.pi * (32.4e-3 ** 2 - 30e-3 ** 2) / 4 * 0.1
     verifica("massa del tubo = rho * area dell'anello * lunghezza", abs(m - atteso) / atteso < 1e-9, f"{m * 1000:.2f} g")
+
+
+def test_volo():
+    """Dinamica di volo: soluzioni analitiche note."""
+    from . import volo as VO
+    g = VO.G0
+    # massa libera con disturbo sinusoidale, da ferma: con fase 90 gradi x(t) = (a/w^2)(cos wt - 1), picco 2a/w^2
+    a_amp, f_Hz = 0.01, 1.0
+    s = VO.simula_asse(1.0, 1.0, 2e-3, 0.0, 0.0, 0.0, 1.0,
+                       lambda t: VO.disturbo_sinusoidale(t, a_amp, f_Hz, 90.0), 2.0, 1e-4)
+    atteso = 2 * a_amp * g / (2 * math.pi * f_Hz) ** 2
+    verifica("volo: massa libera con disturbo, picco 2 a / w^2", abs(np.max(np.abs(s["x"])) - atteso) < 0.01 * atteso,
+             f"{np.max(np.abs(s['x'])) * 1000:.3f} mm contro {atteso * 1000:.3f} mm")
+    # PD senza disturbo e senza ritardo: sovraelongazione del secondo ordine exp(-pi z / sqrt(1 - z^2))
+    z = 0.5
+    s = VO.simula_asse(1.0, 1e6, 2e-3, 4.0, z, 0.1, 0.0, lambda t: 0 * t, 5.0, 1e-4, riferimento=VO.riferimento_gradino)
+    sov = (np.max(s["x"]) - 0.1) / 0.1
+    atteso = math.exp(-math.pi * z / math.sqrt(1 - z * z))
+    verifica("volo: PD, sovraelongazione del secondo ordine", abs(sov - atteso) < 0.01, f"{sov:.3f} contro {atteso:.3f}")
+    # saturazione: la spinta non supera il massimo
+    s = VO.simula_asse(2.0, 0.5, 0.1, 5.0, 0.8, 1.0, 1.0, lambda t: 0 * t, 3.0, 1e-3)
+    verifica("volo: la spinta resta entro il massimo", float(np.max(np.abs(s["F"]))) <= 0.5 + 1e-9)
+    # spostamento da fermo a fermo a spinta costante: d = F t^2 / (4 m)
+    d0, _ = VO.spazio_massimo(2.0, 1.0, 0.0, 3.0)
+    verifica("volo: spazio da fermo a fermo = F t^2 / (4 m)", abs(float(d0) - 1.0 * 9 / 8) < 1e-12)
+    # riferimento a minimo jerk: parte e arriva da fermo
+    x, v, ac = VO.riferimento_minjerk(np.array([0.0, 3.0]), 0.3, 3.0)
+    verifica("volo: riferimento da fermo a fermo", abs(x[0]) < 1e-12 and abs(x[1] - 0.3) < 1e-12 and abs(v[0]) < 1e-12 and abs(v[1]) < 1e-12)
 
 
 def esegui(stampa=print):

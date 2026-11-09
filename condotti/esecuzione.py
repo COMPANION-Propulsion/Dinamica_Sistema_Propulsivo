@@ -1,20 +1,13 @@
-"""ANALISI DEI CONDOTTI DI COMPANION — l'unico script da lanciare.
+"""Motore comune delle tre run (RUN_generica, RUN_S4_interazione, RUN_S4_dinamica).
 
-    python RUN.py            (oppure il tasto Run dell'editor)
-
-Legge tutti i dati da INPUT.py (si modifica solo quello), poi:
+Le tre run differiscono solo per il file di input, per il nome della run e per quali
+grafici di scenario / confronto producono: la sequenza è la stessa.
   1  verifiche fisiche del codice contro risultati noti (si ferma se una fallisce)
-  2  per ogni scenario attivo: ottimizzazione di diametro, varianti geometriche,
+  2  per ogni scenario attivo: ottimizzazione di lato, diametro, varianti geometriche,
      Venturi, ventola e motore; valutazione di spazio, perdite, controllo,
      dinamica, struttura, massa, realizzabilità
-  3  grafici, Excel di confronto e riepilogo in una cartella nuova:
-     output/<data-ora>_<etichetta>_<impronta>/
-         grafici/<scenario>/   viste, profili, mappa ventola, spinta-giri, perdite, salita, Campbell, ingestione
-         grafici/confronto/    punteggi, radar, Pareto, sensibilità, perdite, spazio, stabilità, ruote,
-                               autorità, struttura, ambiente, bilancio di massa
-         excel/Confronto_scenari.xlsx
-         dati/riepilogo.json, dati/progetti.csv
-         INPUT_usato.py, log.txt
+  3  grafici, Excel e riepilogo in una cartella nuova:
+     output/<data-ora>_<nome run>_<etichetta>_<impronta>/
 """
 import argparse
 import copy
@@ -29,21 +22,23 @@ import traceback
 
 import numpy as np
 
-QUI = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, QUI)
+QUI = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))     # cartella del progetto
 for _flusso in (sys.stdout, sys.stderr):        # accenti e simboli anche nella console di Windows
     try:
         _flusso.reconfigure(encoding="utf-8")
     except (AttributeError, ValueError):
         pass
 
-from condotti.config import carica, impronta                     # noqa: E402
-from condotti.ottimizzazione import ottimizza_scenario            # noqa: E402
-from condotti import grafici as GR                                # noqa: E402
-from condotti import output as OUT                                # noqa: E402
-from condotti import report_excel as XL                           # noqa: E402
-from condotti import verifiche as VF                              # noqa: E402
-from condotti.ventole import libreria_motori, libreria_ventole    # noqa: E402
+from .config import carica, impronta
+from .ottimizzazione import ottimizza_scenario
+from . import grafici as GR
+from . import output as OUT
+from . import report_excel as XL
+from . import verifiche as VF
+from .ventole import libreria_motori, libreria_ventole
+
+# gruppi di grafici di scenario (vedi grafici_scenario)
+TUTTI_I_GRUPPI = {"viste", "sezioni", "profili", "ventola", "spinta", "perdite", "dinamica", "struttura", "ingestione"}
 
 
 def _json(o):
@@ -62,16 +57,25 @@ def _json(o):
     return str(o)
 
 
-def grafici_scenario(r, cfg, cartella, formati, log):
+def grafici_scenario(r, cfg, cartella, formati, log, gruppi=TUTTI_I_GRUPPI):
     out = []
     sid = r["scenario"]["id"]
     o = r["ottimo"]
     base = os.path.join(cartella, "grafici", sid)
     tit = f"{sid} — {r['scenario']['nome']} — lato L = {o['L']:.0f} mm"
     try:
+        if "viste" not in gruppi:
+            raise StopIteration
         out += [("viste", p) for p in GR.grafico_viste(o["geometria"], cfg, tit, os.path.join(base, "01_viste_layout"), formati)]
+    except StopIteration:
+        pass
     except Exception:
         log("   (viste non disegnate)\n" + traceback.format_exc())
+    if "sezioni" in gruppi and o["geometria"]["layout"].solidi:
+        try:
+            out += [("sezioni", p) for p in GR.grafico_sezioni(o["geometria"], cfg, tit, os.path.join(base, "10_sezioni_struttura"), formati)]
+        except Exception:
+            log("   (sezioni non disegnate)\n" + traceback.format_exc())
     c = o.get("completo")
     if not c:
         return out
@@ -95,6 +99,8 @@ def grafici_scenario(r, cfg, cartella, formati, log):
         ("ingestione", lambda: GR.grafico_ingestione(c["ingestione_per_comando"], cfg, tit, os.path.join(base, "09_ingestione"), formati)),
     ]
     for gruppo, f in passi:
+        if gruppo not in gruppi:
+            continue
         try:
             out += [(gruppo, p) for p in f()]
         except Exception:
@@ -111,14 +117,17 @@ def _condotto(layout):
             f"{par['spostamento_mm']:+.1f} mm (limite estremità {par['estremita_max_mm']:.0f} mm)")
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--input", default=os.path.join(QUI, "INPUT.py"), help="file di input (predefinito: INPUT.py)")
+def main(nome_run, file_input_predefinito, descrizione, gruppi=TUTTI_I_GRUPPI, con_confronto=True):
+    """Esegue una run.  gruppi: grafici di scenario da produrre; con_confronto: grafici di confronto tra scenari."""
+    ap = argparse.ArgumentParser(description=descrizione, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--input", default=os.path.join(QUI, file_input_predefinito),
+                    help=f"file di input (predefinito: {file_input_predefinito})")
     ap.add_argument("--veloce", action="store_true", help="come ESECUZIONE['modalita'] = 'veloce'")
     args = ap.parse_args()
     t0 = time.time()
     cfg, scenari, _ = carica(args.input)
     es = cfg["esecuzione"]
+    es["etichetta"] = nome_run + (f"_{es['etichetta']}" if es.get("etichetta") else "")
 
     # 1. verifiche fisiche ------------------------------------------------------
     if es.get("verifiche_fisiche", True):
@@ -142,6 +151,8 @@ def main():
     base_out = os.path.join(QUI, es["cartella_output"])
     cart = OUT.crea_cartella(cfg, scenari, imp, base_out)
     OUT.copia_input(cart, args.input)
+    if not con_confronto:      # una sola configurazione: niente confronti
+        os.rmdir(os.path.join(cart, "grafici", "confronto"))
     flog = open(os.path.join(cart, "log.txt"), "w", encoding="utf-8")
 
     def log(msg):
@@ -150,7 +161,7 @@ def main():
         flog.flush()
 
     mis = cfg["missione"]
-    log(f"Esecuzione: {cart}")
+    log(f"Esecuzione {nome_run} (input: {os.path.basename(args.input)}): {cart}")
     log(f"Spinta richiesta per asse: {mis['spinta_per_asse_N']:.3f} N ({mis['origine_spinta']}, "
         f"massa {mis['massa_per_spinta_kg']} kg)")
     log(f"Massa: obiettivo {mis['massa_obiettivo_kg']:.2f} kg, massima ammessa {mis['massa_massima_kg']:.2f} kg")
@@ -172,12 +183,13 @@ def main():
     grafici = []
     log("\nGrafici per scenario...")
     for r in risultati:
-        grafici += [(f"{r['scenario']['id']} · {g}", p) for g, p in grafici_scenario(r, cfg, cart, formati, log)]
-    log("Grafici di confronto...")
-    try:
-        grafici += [("confronto", p) for p in GR.confronto(risultati, cfg, os.path.join(cart, "grafici", "confronto"), formati)]
-    except Exception:
-        log("   (confronto non completo)\n" + traceback.format_exc())
+        grafici += [(f"{r['scenario']['id']} · {g}", p) for g, p in grafici_scenario(r, cfg, cart, formati, log, gruppi)]
+    if con_confronto:
+        log("Grafici di confronto...")
+        try:
+            grafici += [("confronto", p) for p in GR.confronto(risultati, cfg, os.path.join(cart, "grafici", "confronto"), formati)]
+        except Exception:
+            log("   (confronto non completo)\n" + traceback.format_exc())
     info = {"cartella": os.path.basename(cart), "data": f"{dt.datetime.now():%d/%m/%Y %H:%M}", "impronta": imp}
     xlsx = os.path.join(cart, "excel", "Confronto_scenari.xlsx")
     log("Excel di confronto...")
@@ -251,6 +263,3 @@ def main():
     flog.close()
     return cart
 
-
-if __name__ == "__main__":
-    main()

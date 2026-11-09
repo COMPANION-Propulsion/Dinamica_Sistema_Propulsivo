@@ -103,7 +103,7 @@ def scrivi(percorso, risultati, cfg, scenari, info, grafici):
 def _leggimi(ws, cfg, info):
     ws.title = "Leggimi"
     _titolo(ws, "COMPANION — confronto delle configurazioni dei condotti",
-            "File generato automaticamente da RUN.py: non modificare a mano i valori calcolati.")
+            "File generato automaticamente dalle run: non modificare a mano i valori calcolati.")
     righe = [
         ("Esecuzione", info["cartella"]),
         ("Data", info["data"]),

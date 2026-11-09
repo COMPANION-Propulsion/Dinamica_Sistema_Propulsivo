@@ -1,4 +1,4 @@
-"""Lettura di INPUT.py (dati e scenari), controlli, grandezze derivate."""
+"""Lettura del file di input (dati e scenari), controlli, grandezze derivate."""
 import importlib.util
 import hashlib
 import json
@@ -106,7 +106,7 @@ def _verifica(cfg, scenari):
     if m.get("massa_massima_kg") is not None and m["massa_massima_kg"] <= m["massa_obiettivo_kg"]:
         errori.append("massa_massima_kg deve essere maggiore di massa_obiettivo_kg")
     pesi = cfg["ottimizzazione"]["pesi"]
-    noti = {"spazio", "perdite", "semplicita", "robustezza", "dinamica", "massa"}
+    noti = {"spazio", "perdite", "semplicita", "robustezza", "dinamica", "massa", "ingestione"}
     if set(pesi) - noti:
         errori.append(f"criteri sconosciuti nei pesi: {sorted(set(pesi) - noti)} (ammessi: {sorted(noti)})")
     ids = [s["id"] for s in scenari]
