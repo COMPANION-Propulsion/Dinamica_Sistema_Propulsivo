@@ -1,5 +1,6 @@
 __pycache__/
-*.pyc
+.pytest_cache/
 
 # Risultati delle run: non sincronizzare
+risultati/
 output/

@@ -1,5 +1,6 @@
-# Dipendenze di RUN_S4_dinamica.py e del pacchetto dinamica/
+# Dipendenze di run_dinamica.py e del pacchetto dinamica_designer/
 # Installazione: pip install -r requirements.txt
-# Versioni provate: Python 3.14, numpy 2.5.3, matplotlib 3.11.1
+# Versioni provate: Python 3.14, numpy 2.5.3, matplotlib 3.11.1, pytest 9.1.1
 numpy>=1.24
 matplotlib>=3.7
+pytest>=7

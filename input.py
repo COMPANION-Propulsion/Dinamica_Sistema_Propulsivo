@@ -1,12 +1,14 @@
 """INPUT DINAMICA S4: dinamica di volo del cubo (configurazione S4), massa puntiforme nel baricentro.
 
-È l'unico file da modificare per la run di dinamica.  Dopo averlo salvato si lancia RUN_S4_dinamica.py.
+È l'unico file da modificare.  Dopo averlo salvato si lancia run_dinamica.py: i risultati vanno in
+risultati/<caso>/ (sintesi in 00_sintesi/RISULTATO.md).
 Non dipende da ../Analisi_Configurazioni (analisi dei condotti): i dati che arrivano dall'analisi (spinta massima,
-tempo di salita, potenza, ...) sono qui sotto, copiati a mano dall'ultima run di interazione
-in ../Analisi_Configurazioni/output/ (foglio Excel "Controllo e dinamica" e "Fluidodinamica", oppure dati/riepilogo.json).
+tempo di salita, potenza, ...) sono qui sotto, copiati a mano dall'ultima run di S4 in ../Analisi_Configurazioni/risultati/<caso>/
+(02_excel: fogli "Controllo e dinamica" e "Fluidodinamica"; oppure 00_sintesi/riepilogo.json).
 
 Sezioni:
-   0  ESECUZIONE      passo di integrazione, formato dei grafici, cartella di output
+      CASO            nome della cartella dei risultati
+   0  ESECUZIONE      passo di integrazione, formato dei grafici, cartella dei risultati
    1  CORPO           massa (concentrata nel baricentro)
    2  ATTUATORE       spinta massima per asse e tempo di salita (dall'analisi)
    3  MANOVRA         spostamento richiesto, tempo, finestra di volo, tolleranza
@@ -18,18 +20,25 @@ Sezioni:
 Convenzione degli assi: X, Y, Z come nell'analisi (X destra, Y fronte, Z alto).  Gli elenchi [X, Y, Z]
 seguono sempre questo ordine.  I tre assi sono indipendenti e si muovono contemporaneamente.
 
-Fonti: [ANL] risultato dell'ultima run di interazione, [EUG] ESA User Guide, [XLS] foglio di dimensionamento.
+Fonti: [ANL] risultato dell'ultima run di S4 dell'analisi, [EUG] ESA User Guide, [XLS] foglio di dimensionamento.
 SEGNAPOSTO = valore da sostituire appena disponibile un dato vero.
 """
+
+# =============================================================================
+# CASO   (cartella dei risultati: risultati/<nome>/)
+# =============================================================================
+CASO = {
+    "nome": None,                  # None = nome automatico (massa, distanza, tempo + impronta degli input)
+    "sovrascrivi": False,          # True = riusa una cartella con nome anche se gli input erano diversi
+}
 
 # =============================================================================
 # 0. ESECUZIONE
 # =============================================================================
 ESECUZIONE = {
-    "etichetta": "",               # testo libero nel nome della cartella di output ("" = automatico)
     "passo_integrazione_s": 0.001, # passo dell'integrazione (s)
     "formato_grafici": ["svg"],    # ["svg"] oppure ["svg", "png"]
-    "cartella_output": "output",
+    "cartella_output": "risultati",
     "verifiche": True,             # prima della simulazione controlla il codice contro risultati noti
 }
 
@@ -37,7 +46,7 @@ ESECUZIONE = {
 # 1. CORPO
 # =============================================================================
 CORPO = {
-    "massa_kg": 5,              # [ANL] massa stimata dell'ultima run di interazione (obiettivo 4 kg)
+    "massa_kg": 5,              # [ANL] massa stimata dell'ultima run di S4 dell'analisi (obiettivo 4 kg)
 }
 
 # =============================================================================

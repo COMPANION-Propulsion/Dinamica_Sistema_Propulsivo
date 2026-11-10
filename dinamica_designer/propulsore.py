@@ -13,8 +13,8 @@ Bilancio di momento per le ruote di reazione nella finestra libera:
 baricentro fuori asse, squilibrio tra le ventole di una coppia, coppia di
 reazione dei rotori non compensati e momento angolare dei rotori in avvio.
 
-Usato da RUN_S4_dinamica (margine di fase, ruote) e dall'analisi delle configurazioni
-in ../Analisi_Configurazioni (condotti/ponte_dinamica.py): è l'unica copia di questo modello.
+Usato da run_dinamica.py (margine di fase, ruote) e dall'analisi delle configurazioni
+in ../Analisi_Configurazioni (configurazioni_designer/core/ponte_dinamica.py): è l'unica copia di questo modello.
 """
 import math
 import numpy as np

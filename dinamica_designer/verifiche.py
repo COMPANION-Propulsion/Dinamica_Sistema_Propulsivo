@@ -1,7 +1,7 @@
 """Verifiche automatiche della dinamica di volo contro soluzioni analitiche note.
 
-RUN_S4_dinamica.py le esegue prima della simulazione (ESECUZIONE["verifiche"]);
-da sole:  python -m dinamica.verifiche
+run_dinamica.py le esegue prima della simulazione (ESECUZIONE["verifiche"]);
+da sole:  python -m dinamica_designer.verifiche
 
 Se un test fallisce, i risultati della simulazione non vanno usati finché non si è capito perché.
 """
