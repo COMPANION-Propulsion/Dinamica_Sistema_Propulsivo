@@ -28,7 +28,7 @@ SEGNAPOSTO = valore da sostituire appena disponibile un dato vero.
 # CASO   (cartella dei risultati: risultati/<nome>/)
 # =============================================================================
 CASO = {
-    "nome": None,                  # None = nome automatico (massa, distanza, tempo + impronta degli input)
+    "nome": "TEST1",                  # None = nome automatico (massa, distanza, tempo + impronta degli input)
     "sovrascrivi": False,          # True = riusa una cartella con nome anche se gli input erano diversi
 }
 
@@ -39,22 +39,22 @@ ESECUZIONE = {
     "passo_integrazione_s": 0.001, # passo dell'integrazione (s)
     "formato_grafici": ["svg"],    # ["svg"] oppure ["svg", "png"]
     "cartella_output": "risultati",
-    "verifiche": True,             # prima della simulazione controlla il codice contro risultati noti
+    "verifiche": False,             # prima della simulazione controlla il codice contro risultati noti
 }
 
 # =============================================================================
 # 1. CORPO
 # =============================================================================
 CORPO = {
-    "massa_kg": 5,              # [ANL] massa stimata dell'ultima run di S4 dell'analisi (obiettivo 4 kg)
+    "massa_kg": 4.5,              # [ANL] massa stimata dell'ultima run di S4 dell'analisi (obiettivo 4 kg)
 }
 
 # =============================================================================
 # 2. ATTUATORE   (da analisi: foglio "Controllo e dinamica")
 # =============================================================================
 ATTUATORE = {
-    "spinta_max_positiva_N": [1.9466, 1.9466, 1.9466],   # [ANL] forza pura disponibile per verso, [X, Y, Z]
-    "spinta_max_negativa_N": [1.9466, 1.9466, 1.9466],   # [ANL] stesso per il verso opposto
+    "spinta_max_positiva_N": [0.2, 0.2, 0.2],   # [ANL] forza pura disponibile per verso, [X, Y, Z]
+    "spinta_max_negativa_N": [0.2, 0.2, 0.2],   # [ANL] stesso per il verso opposto
     "tempo_salita_90_s": 0.1204,   # [ANL] tempo per arrivare al 90 % della spinta; il ritardo è tau = t90 / 2,3
 }
 
@@ -62,8 +62,8 @@ ATTUATORE = {
 # 3. MANOVRA
 # =============================================================================
 MANOVRA = {
-    "distanza_m": [0.3, 0.3, 0.3],       # [XLS] SEGNAPOSTO: spostamento richiesto su X, Y, Z (da fermo a fermo)
-    "tempo_manovra_s": 3.0,              # [XLS] SEGNAPOSTO: tempo per completarlo
+    "distanza_m": [0.25, 0.25, 0.25],       # [XLS] SEGNAPOSTO: spostamento richiesto su X, Y, Z (da fermo a fermo)
+    "tempo_manovra_s": 4.0,              # [XLS] SEGNAPOSTO: tempo per completarlo
     "finestra_s": 5.0,                   # [ESA] finestra utile per oggetti liberi: si simula fino a qui
     "tolleranza_posizione_mm": 5.0,      # per il tempo di assestamento
     "profilo": "minimo_jerk",            # "minimo_jerk" (polinomio di quinto grado) oppure "gradino"
@@ -84,7 +84,7 @@ DISTURBO = {
 REGOLATORE = {
     "frequenza_propria_rad_s": 2.0,      # wn: banda dell'anello di posizione
     "smorzamento": 0.8,                  # zeta
-    "feedforward_riferimento": False,    # True = aggiunge m * a_riferimento al comando (segue meglio la traiettoria)
+    "feedforward_riferimento": True,    # True = aggiunge m * a_riferimento al comando (segue meglio la traiettoria)
 }
 
 # =============================================================================
@@ -101,9 +101,9 @@ ENERGIA = {
 # =============================================================================
 RUOTE = {
     "scostamento_baricentro_mm": 5.0,    # [XLS] offset del baricentro dalla linea della spinta
-    "braccio_coppia_m": 0.2104,          # [ANL] braccio tra due ventole di una coppia
+    "braccio_coppia_m": 0.162,          # [ANL] braccio tra due ventole di una coppia
     "squilibrio_coppia": 0.05,           # squilibrio di spinta tra le due ventole di una coppia (5 %)
-    "spinta_per_unita_N": 0.6943,        # [ANL] spinta di una ventola alla spinta di progetto
+    "spinta_per_unita_N": 0.108,        # [ANL] spinta di una ventola alla spinta di progetto
     "coppia_reazione_rotori_Nm": 2.89e-5,# [ANL] coppia di reazione netta dei rotori
     "momento_rotori_in_avvio_Nms": 0.0,  # [ANL] momento angolare dei rotori non compensati
     "momento_ruote_max_Nms": 0.15,       # [XLS] SEGNAPOSTO: momento angolare massimo delle ruote
