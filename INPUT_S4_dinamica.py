@@ -1,9 +1,9 @@
 """INPUT DINAMICA S4: dinamica di volo del cubo (configurazione S4), massa puntiforme nel baricentro.
 
 È l'unico file da modificare per la run di dinamica.  Dopo averlo salvato si lancia RUN_S4_dinamica.py.
-Non dipende da INPUT_S4.py né dall'analisi dei condotti: i dati che arrivano dall'analisi (spinta massima,
+Non dipende da ../Analisi_Configurazioni (analisi dei condotti): i dati che arrivano dall'analisi (spinta massima,
 tempo di salita, potenza, ...) sono qui sotto, copiati a mano dall'ultima run di interazione
-(foglio Excel "Controllo e dinamica" e "Fluidodinamica", oppure dati/riepilogo.json).
+in ../Analisi_Configurazioni/output/ (foglio Excel "Controllo e dinamica" e "Fluidodinamica", oppure dati/riepilogo.json).
 
 Sezioni:
    0  ESECUZIONE      passo di integrazione, formato dei grafici, cartella di output

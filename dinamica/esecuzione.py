@@ -14,6 +14,7 @@ import json
 import math
 import os
 import re
+import shutil
 import sys
 import time
 
@@ -22,9 +23,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from . import dinamica as DY
+from . import propulsore as DY
 from . import volo as VO
-from . import output as OUT
 
 QUI = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSI = "XYZ"
@@ -80,6 +80,17 @@ def _crea_cartella(cfg, imp, base):
     for sotto in ("grafici", "dati"):
         os.makedirs(os.path.join(percorso, sotto), exist_ok=True)
     return percorso
+
+
+def _registra(base, riga):
+    """Aggiunge una riga a output/registro_esecuzioni.csv (una riga per run)."""
+    f = os.path.join(base, "registro_esecuzioni.csv")
+    nuovo = not os.path.exists(f)
+    with open(f, "a", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(riga.keys()), delimiter=";")
+        if nuovo:
+            w.writeheader()
+        w.writerow(riga)
 
 
 def _salva(fig, percorso, formati):
@@ -173,7 +184,7 @@ def main(nome_run, input_predefinito, descrizione):
     if es.get("verifiche", True):
         from . import verifiche as VF
         ok, tot = VF.esegui(stampa=lambda *a, **k: None)
-        print(f"Verifiche fisiche del codice: {ok}/{tot} superate")
+        print(f"Verifiche della dinamica: {ok}/{tot} superate")
         if ok < tot:
             print("Una verifica è fallita: la simulazione non parte.")
             return None
@@ -181,7 +192,7 @@ def main(nome_run, input_predefinito, descrizione):
     base = os.path.join(QUI, es["cartella_output"])
     os.makedirs(base, exist_ok=True)
     cart = _crea_cartella(cfg, imp, base)
-    OUT.copia_input(cart, args.input)
+    shutil.copy(args.input, os.path.join(cart, "INPUT_usato.py"))
     flog = open(os.path.join(cart, "log.txt"), "w", encoding="utf-8")
 
     def log(msg=""):
@@ -209,7 +220,7 @@ def main(nome_run, input_predefinito, descrizione):
                        "spazio_max_con_disturbo_m": float(d1), "tempo_min_senza_disturbo_s": t0_,
                        "tempo_min_con_disturbo_s": t1_ if math.isfinite(t1_) else None,
                        "disturbo_sulla_spinta": a_d * m / F})
-    # margine di fase e ruote (modelli di dinamica.py)
+    # margine di fase e ruote (modelli di propulsore.py)
     ru = cfg["RUOTE"]
     pm = {wc: DY.margine_fase(at["tempo_salita_90_s"], wc) for wc in ru["frequenze_margine_fase_rad_s"]}
     F_asse = cfg["ENERGIA"]["spinta_rif_N"]
@@ -257,7 +268,7 @@ def main(nome_run, input_predefinito, descrizione):
             "margine_fase_gradi": {str(k): v for k, v in pm.items()}, "t_salita_90_s": at["tempo_salita_90_s"], "ruote": rw}
     with open(os.path.join(cart, "dati", "riepilogo.json"), "w", encoding="utf-8") as fh:
         json.dump(riep, fh, indent=2, ensure_ascii=False, default=float)
-    OUT.registra(base, {"data": riep["data"], "cartella": os.path.basename(cart), "impronta": imp,
+    _registra(base, {"data": riep["data"], "cartella": os.path.basename(cart), "impronta": imp,
                         "etichetta": nome_run + (f"_{es['etichetta']}" if es.get("etichetta") else ""),
                         "scenari": 1, "vincitore": "—", "durata_s": round(time.time() - t0)})
     log(f"\nFinito in {time.time() - t0:.0f} s. Risultati in {cart}")
