@@ -255,8 +255,14 @@ def scrivi_risultato(riep, cfg, nome_caso, file_scritti, percorso):
         L.append(f"| {s['asse']} | {s['spinta_N']:.3f} | {s['spazio_max_senza_disturbo_m']:.3f} "
                  f"| {s['spazio_max_con_disturbo_m']:.3f} | {s['tempo_min_senza_disturbo_s']:.2f} | {t1} "
                  f"| {s['disturbo_sulla_spinta']:.0%} |")
+    an = riep["margine_fase_anello"]
     L += ["", "## Attuatore e ruote di reazione", "",
-          f"- margine di fase: " + ", ".join(f"{p:.0f}° a {wc} rad/s" for wc, p in riep["margine_fase_gradi"].items()),
+          f"- margine di fase dell'anello simulato ({'PID' if rg.get('polo_integrale_su_wn', 0.0) else 'PD'} + attuatore del "
+          f"primo ordine, massa pura): **{an['margine_gradi']:.1f}°** alla pulsazione di taglio {an['pulsazione_taglio_rad_s']:.2f} rad/s"
+          + ("" if an["margine_gradi"] >= 45.0 else
+             f" → **ATTENZIONE: margine sotto 45°**, il ritardo dell'attuatore è troppo alto per questa banda"),
+          "- per confronto, regolatore PD di riferimento con zero a wc/3 (non è l'anello simulato): "
+          + ", ".join(f"{p:.0f}° a {wc} rad/s" for wc, p in riep["margine_fase_gradi"].items()),
           f"- momento accumulato dalle ruote nella finestra: {rw['H_finestra']:.3f} N·m·s = "
           f"**{rw['quota_ruota']:.0%} della capacità** ({ru['momento_ruote_max_Nms']} N·m·s)"
           + (" → **le ruote SATURANO**" if rw["quota_ruota"] > 1 else ""),

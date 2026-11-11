@@ -16,6 +16,7 @@ import time
 import numpy as np
 
 from . import caso as CA
+from . import confronto_analisi as CF
 from . import export as EX
 from . import pale as PA
 from . import propulsore as DY
@@ -222,13 +223,16 @@ def spazio_e_tempo(cfg):
 
 
 def attuatore_e_ruote(cfg):
-    """Margine di fase per le bande richieste e bilancio delle ruote (modelli di propulsore.py)."""
-    at, ma, ru = cfg["ATTUATORE"], cfg["MANOVRA"], cfg["RUOTE"]
+    """Margine di fase (anello simulato e PD di riferimento alle bande richieste) e bilancio delle ruote."""
+    at, ma, ru, rg = cfg["ATTUATORE"], cfg["MANOVRA"], cfg["RUOTE"], cfg["REGOLATORE"]
     pm = {wc: DY.margine_fase(at["tempo_salita_90_s"], wc) for wc in ru["frequenze_margine_fase_rad_s"]}
+    kp, kd, ki = VO.guadagni(rg["frequenza_propria_rad_s"], rg["smorzamento"], rg.get("polo_integrale_su_wn", 0.0))
+    wc, pma = DY.margine_fase_anello(kp, kd, ki, at["tempo_salita_90_s"] / 2.3)
+    anello = {"pulsazione_taglio_rad_s": wc, "margine_gradi": pma}
     rw = DY.bilancio_ruote(cfg["ENERGIA"]["spinta_rif_N"], ru["scostamento_baricentro_mm"] / 1000, ru["braccio_coppia_m"],
                            ru["squilibrio_coppia"], ru["spinta_per_unita_N"], ru["coppia_reazione_rotori_Nm"],
                            ru["momento_rotori_in_avvio_Nms"], ma["finestra_s"], ru["momento_ruote_max_Nms"])
-    return pm, rw
+    return pm, rw, anello
 
 
 # ---------------------------------------------------------------- run
@@ -268,11 +272,16 @@ def run(input_file=INPUT_FILE, nome_run="dinamica"):
         f"(profilo {ma['profilo']}), finestra {ma['finestra_s']} s")
     log(f"{EX.descrivi_regolatore(rg)}; attuatore t90 = {at['tempo_salita_90_s']} s")
     log(f"Disturbo: {EX.descrivi_disturbo(di)}")
+    run_anl, avvisi_anl = CF.confronta(cfg, ROOT)
+    log(f"Dati [ANL] dell'input confrontati con la run dell'analisi {run_anl}: "
+        + ("coerenti" if not avvisi_anl else f"{len(avvisi_anl)} differenze") if run_anl else "Dati [ANL] non controllati")
+    for a in avvisi_anl:
+        log(f"  ATTENZIONE: {a}")
     serie, ind = simula(cfg)
     mc = monte_carlo(cfg)
     pale = PA.analizza(cfg["PALE"], m, max(max(at["spinta_max_positiva_N"]), max(at["spinta_max_negativa_N"])))
     spazio = spazio_e_tempo(cfg)
-    pm, rw = attuatore_e_ruote(cfg)
+    pm, rw, anello = attuatore_e_ruote(cfg)
 
     log("\nRISULTATI PER ASSE, CASO PEGGIORE (bias e v0 col modulo pieno su ogni asse, contro il moto)")
     log(f"  {'asse':<5}{'err a T':>10}{'err max':>10}{'sovra':>9}{'assest.':>10}{'F max':>9}{'F/Fmax':>8}{'sat.':>7}{'energia':>10}")
@@ -309,7 +318,13 @@ def run(input_file=INPUT_FILE, nome_run="dinamica"):
             f"servono almeno {s['tempo_min_senza_disturbo_s']:.2f} s ({tmin} con disturbo); il disturbo è il "
             f"{s['disturbo_sulla_spinta']:.0%} della spinta massima")
     log("\nATTUATORE E RUOTE")
-    log(f"  tempo di salita al 90 %: {at['tempo_salita_90_s']:.3f} s;  margine di fase: "
+    log(f"  tempo di salita al 90 %: {at['tempo_salita_90_s']:.3f} s")
+    log(f"  margine di fase dell'anello simulato ({'PID' if rg.get('polo_integrale_su_wn', 0.0) else 'PD'} + attuatore): {anello['margine_gradi']:.1f}° "
+        f"alla pulsazione di taglio {anello['pulsazione_taglio_rad_s']:.2f} rad/s")
+    if not anello["margine_gradi"] >= 45.0:
+        log(f"  ATTENZIONE: margine di fase dell'anello sotto 45° ({anello['margine_gradi']:.1f}°): "
+            "ritardo dell'attuatore troppo alto per questa banda")
+    log("  per confronto, regolatore PD di riferimento con zero a wc/3 (non è l'anello simulato): "
         + ", ".join(f"{p:.0f}° a {wc:g} rad/s" for wc, p in pm.items()))
     log(f"  ruote di reazione: momento in finestra {rw['H_finestra']:.3f} N·m·s = {rw['quota_ruota']:.0%} della capacità "
         f"({ru['momento_ruote_max_Nms']} N·m·s)" + ("  -> SATURANO" if rw["quota_ruota"] > 1 else ""))
@@ -329,7 +344,8 @@ def run(input_file=INPUT_FILE, nome_run="dinamica"):
             "monte_carlo": {k: v for k, v in mc.items() if k not in ("inviluppo", "righe")} if mc else None,
             "pale": {k: v for k, v in pale.items() if k != "U_campioni_g_mm"},
             "spazio_massimo": spazio,
-            "margine_fase_gradi": {str(k): v for k, v in pm.items()}, "t_salita_90_s": at["tempo_salita_90_s"], "ruote": rw}
+            "margine_fase_gradi": {str(k): v for k, v in pm.items()}, "margine_fase_anello": anello, "t_salita_90_s": at["tempo_salita_90_s"], "ruote": rw,
+            "confronto_analisi": {"run": run_anl, "avvisi": avvisi_anl}}
     scritti.append(EX.scrivi_riepilogo(riep, os.path.join(cart, "00_sintesi", "riepilogo.json")))
     rel = [os.path.relpath(p, cart).replace(os.sep, "/") for p in scritti]
     ris = EX.scrivi_risultato(riep, cfg, nome, sorted(["00_sintesi/RISULTATO.md"] + rel) + ["input_usato.py", "log.txt"],

@@ -221,7 +221,9 @@ uguale. Il residuo, al 95 % circa 2e-5 N·m·s, finisce sulle ruote di reazione,
 
 Oltre alla simulazione, la run calcola a spinta massima quanto spazio si può fare nel tempo della manovra (accelerando
 per metà del tempo e frenando per l'altra metà) e il tempo minimo per la distanza richiesta, con e senza bias. Infine
-fa il margine di fase dell'anello di posizione con il ritardo dei propulsori e il bilancio del momento angolare delle
+fa il margine di fase dell'anello di posizione realmente simulato (regolatore PD/PID dell'input, massa pura, attuatore del
+primo ordine con τ = t90/2,3; pulsazione di taglio e margine calcolati numericamente, avviso sotto 45°; la tabella alle
+frequenze fisse è solo un regolatore PD di riferimento con zero a ωc/3) e il bilancio del momento angolare delle
 ruote di reazione nella finestra (modelli in `propulsore.py`).
 
 
