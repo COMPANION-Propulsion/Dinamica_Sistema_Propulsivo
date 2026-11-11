@@ -21,7 +21,7 @@ Sezioni:
 Convenzione degli assi: X, Y, Z come nell'analisi (X destra, Y fronte, Z alto).  Gli elenchi [X, Y, Z]
 seguono sempre questo ordine.  I tre assi sono indipendenti e si muovono contemporaneamente.
 
-Fonti: [ANL] risultato dell'ultima run di S4 dell'analisi, [EUG] ESA User Guide, [XLS] foglio di dimensionamento,
+Fonti: [ANL] run di S4 dell'analisi del 04/11 (archivio 20261104-161428), [EUG] ESA User Guide, [XLS] foglio di dimensionamento,
 [ERM] ERMES, ESA Fly Your Thesis 2022, Experiment Report v8 (Documentazione), [DPL] Deploy! Proposal (modello ESA),
 [team] proposta della chat del team (bias 0,01 g, rumore a 1 Hz, velocità iniziale in direzione casuale).
 SEGNAPOSTO = valore da sostituire appena disponibile un dato vero.
@@ -31,7 +31,7 @@ SEGNAPOSTO = valore da sostituire appena disponibile un dato vero.
 # CASO   (cartella dei risultati: risultati/<nome>/)
 # =============================================================================
 CASO = {
-    "nome": "TEST1",                  # None = nome automatico (massa, distanza, tempo + impronta degli input)
+    "nome": None,                  # None = nome automatico (massa, distanza, tempo + impronta degli input)
     "sovrascrivi": False,          # True = riusa una cartella con nome anche se gli input erano diversi
 }
 
@@ -42,31 +42,32 @@ ESECUZIONE = {
     "passo_integrazione_s": 0.001, # passo dell'integrazione (s)
     "formato_grafici": ["svg"],    # ["svg"] oppure ["svg", "png"]
     "cartella_output": "risultati",
-    "verifiche": False,             # prima della simulazione controlla il codice contro risultati noti
+    "verifiche": True,             # prima della simulazione controlla il codice contro risultati noti
 }
 
 # =============================================================================
 # 1. CORPO
 # =============================================================================
 CORPO = {
-    "massa_kg": 4.5,              # [ANL] massa stimata dell'ultima run di S4 dell'analisi (obiettivo 4 kg)
+    "massa_kg": 4.31,           # [ANL] massa stimata di S4, run del 04/11 (obiettivo 4 kg)
 }
 
 # =============================================================================
 # 2. ATTUATORE   (da analisi: foglio "Controllo e dinamica")
 # =============================================================================
 ATTUATORE = {
-    "spinta_max_positiva_N": [0.2, 0.2, 0.2],   # [ANL] forza pura disponibile per verso, [X, Y, Z]
-    "spinta_max_negativa_N": [0.2, 0.2, 0.2],   # [ANL] stesso per il verso opposto
-    "tempo_salita_90_s": 0.1204,   # [ANL] tempo per arrivare al 90 % della spinta; il ritardo è tau = t90 / 2,3
+    "spinta_max_positiva_N": [1.4614, 1.4614, 1.4614],   # [ANL] forza pura minima per verso di S4, [X, Y, Z]
+    "spinta_max_negativa_N": [1.4614, 1.4614, 1.4614],   # [ANL] stesso per il verso opposto (ventole reversibili)
+    "tempo_salita_90_s": 0.2856,   # [ANL] tempo per arrivare al 90 % della spinta; il ritardo è tau = t90 / 2,3
+                                   # (il cambio di verso delle ventole reversibili è più lento, 0,48 s: non modellato)
 }
 
 # =============================================================================
 # 3. MANOVRA
 # =============================================================================
 MANOVRA = {
-    "distanza_m": [0.25, 0.25, 0.25],       # [XLS] SEGNAPOSTO: spostamento richiesto su X, Y, Z (da fermo a fermo)
-    "tempo_manovra_s": 4.0,              # [XLS] SEGNAPOSTO: tempo per completarlo
+    "distanza_m": [0.3, 0.3, 0.3],       # [XLS] SEGNAPOSTO: spostamento richiesto su X, Y, Z (da fermo a fermo)
+    "tempo_manovra_s": 3.0,              # [XLS] SEGNAPOSTO: tempo per completarlo
     "finestra_s": 5.0,                   # [ESA] finestra utile per oggetti liberi: si simula fino a qui
     "tolleranza_posizione_mm": 5.0,      # per il tempo di assestamento
     "profilo": "minimo_jerk",            # "minimo_jerk" (polinomio di quinto grado) oppure "gradino"
@@ -99,7 +100,7 @@ DISTURBO = {
 REGOLATORE = {
     "frequenza_propria_rad_s": 2.0,      # wn: banda dell'anello di posizione
     "smorzamento": 0.8,                  # zeta
-    "polo_integrale_su_wn": 1.0,        # alfa: 0 = PD; > 0 = PID con un terzo polo in -alfa wn.
+    "polo_integrale_su_wn": 1.0,         # alfa: 0 = PD; > 0 = PID con un terzo polo in -alfa wn.
                                          # Con il PD il bias lascia un errore fisso bias / wn^2 (0,01 g, wn 2: 24,5 mm);
                                          # PID alfa 1 + feedforward: 99 % delle manovre assestate nel Monte Carlo
     "feedforward_riferimento": True,     # True = aggiunge m * a_riferimento al comando (segue meglio la traiettoria;
@@ -110,7 +111,7 @@ REGOLATORE = {
 # 6. ENERGIA   (potenza per asse in funzione della spinta: P = P_rif (F / F_rif)^esponente)
 # =============================================================================
 ENERGIA = {
-    "potenza_rif_W": 146.9,              # [ANL] potenza elettrica per asse alla spinta di progetto (due ventole)
+    "potenza_rif_W": 163.56,             # [ANL] potenza elettrica per asse alla spinta di progetto (due ventole)
     "spinta_rif_N": 1.3886,              # [ANL] spinta di progetto per asse
     "esponente": 1.5,                    # SEGNAPOSTO: teoria dell'elica, potenza ~ spinta^1,5
 }
@@ -120,10 +121,10 @@ ENERGIA = {
 # =============================================================================
 RUOTE = {
     "scostamento_baricentro_mm": 5.0,    # [XLS] offset del baricentro dalla linea della spinta
-    "braccio_coppia_m": 0.162,          # [ANL] braccio tra due ventole di una coppia
+    "braccio_coppia_m": 0.1596,          # [ANL] braccio della spinta di S4
     "squilibrio_coppia": 0.05,           # squilibrio di spinta tra le due ventole di una coppia (5 %)
-    "spinta_per_unita_N": 0.108,        # [ANL] spinta di una ventola alla spinta di progetto
-    "coppia_reazione_rotori_Nm": 2.89e-5,# [ANL] coppia di reazione netta dei rotori
+    "spinta_per_unita_N": 0.6943,        # [ANL] spinta di una ventola alla spinta di progetto
+    "coppia_reazione_rotori_Nm": 6.88e-4,# [ANL] coppia di reazione netta dei rotori di S4
     "momento_rotori_in_avvio_Nms": 0.0,  # [ANL] momento angolare dei rotori non compensati
     "momento_ruote_max_Nms": 0.15,       # [XLS] SEGNAPOSTO: momento angolare massimo delle ruote
     "frequenze_margine_fase_rad_s": [1.0, 2.0, 4.0],

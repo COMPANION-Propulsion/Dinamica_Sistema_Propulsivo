@@ -65,7 +65,7 @@ Dinamica_Sistema_Propulsivo/
 
 ### Il cubo
 
-Il cubo è trattato come un punto con tutta la massa nel baricentro (5 kg oggi). Si muove lungo X, Y e Z nello
+Il cubo è trattato come un punto con tutta la massa nel baricentro (4,31 kg oggi, la stima di S4 dell'analisi). Si muove lungo X, Y e Z nello
 stesso momento, ma i tre assi non si parlano: quello che succede su X non cambia Y. Le rotazioni non ci sono. È una
 semplificazione forte, ma per capire se la spinta basta e quanto bene si ferma il cubo è sufficiente.
 
@@ -86,7 +86,8 @@ La spinta non arriva subito: la ventola deve prendere giri. Lo modelliamo come u
 tau dF/dt = F_cmd - F,     tau = t90 / 2,3
 ```
 
-dove `t90` è il tempo che la spinta impiega ad arrivare al 90 % del valore chiesto (0,12 s per S4, dall'analisi).
+dove `t90` è il tempo che la spinta impiega ad arrivare al 90 % del valore chiesto (0,29 s per S4, dall'analisi). Le ventole di S4 sono reversibili e per cambiare verso
+impiegano di più, 0,48 s: questo il modello non lo vede.
 La spinta chiesta non può superare la spinta massima per verso; se la supera, viene tagliata (saturazione).
 
 ### Il regolatore
@@ -193,7 +194,7 @@ e a velocità angolare `omega` la forza rotante vale `F = U omega^2`.
 Facciamo i conti a mano con i numeri di S4. Pala di 9,5 x 10,5 x 1 mm: volume 100 mm³. In PLA tra 1150 e 1250 kg/m³
 pesa tra 0,115 e 0,125 g, quindi la differenza massima fra due pale è 0,01 g. Il baricentro è a 15,75 mm dall'asse.
 Lo squilibrio peggiore con 3 pale è una pala pesante e due leggere: 0,01 g x 15,75 mm = 0,157 g·mm. A 45 600 giri/min
-(761 Hz, omega = 4780 rad/s) la forza è 0,157e-6 x 4780² = 3,6 N, quasi il doppio della spinta massima di un asse.
+(761 Hz, omega = 4780 rad/s) la forza è 0,157e-6 x 4780² = 3,6 N, due volte e mezzo la spinta massima di un asse (1,46 N).
 
 Sembra enorme, ma gira a 761 Hz. Il regolatore lavora sotto 1 Hz e non la vede nemmeno; il cubo si comporta come una
 massa libera spinta avanti e indietro, e una massa libera spinta da una forza `U omega^2 sin(omega t)` oscilla di
@@ -202,7 +203,7 @@ massa libera spinta avanti e indietro, e una massa libera spinta da una forza `U
 x = U / M
 ```
 
-che non dipende dai giri: 0,157 g·mm / 5 kg = 0,03 µm. Anche con quattro ventole in fase sono 0,13 µm. Sulla
+che non dipende dai giri: 0,157 g·mm / 4,31 kg = 0,036 µm. Anche con quattro ventole in fase sono 0,15 µm. Sulla
 traiettoria le pale non contano. Contano invece sulle vibrazioni: 3,6 N a 761 Hz passano per i cuscinetti e la
 struttura e arrivano ai sensori inerziali. Il messaggio pratico è che i rotori vanno equilibrati dopo la stampa.
 
@@ -282,15 +283,16 @@ vibrano i rotori e quanto poco questo sposti il cubo.
 
 ## Cosa dicono i numeri oggi
 
-Con gli input attuali (5 kg, 0,3 m in 3 s su ogni asse, finestra di 5 s, tolleranza 5 mm, `wn` = 2 rad/s):
+Con gli input attuali (S4 del 04/11: 4,31 kg, 1,46 N per verso, t90 0,29 s; 0,3 m in 3 s su ogni asse, finestra
+di 5 s, tolleranza 5 mm, `wn` = 2 rad/s). L'errore è il peggiore dei tre assi:
 
 | regolatore | errore a fine finestra, 95 % dei campioni | campioni assestati su tutti e tre gli assi |
 |---|---|---|
-| PD | circa 24 mm | 0 % |
-| PD con feedforward | circa 24 mm | 0 % |
-| PID, alfa 0,5 | circa 10 mm | 2 % |
-| PID, alfa 0,5, con feedforward | circa 4,5 mm | 91 % |
-| PID, alfa 1, con feedforward (il default di `input.py`) | circa 3,2 mm | 99 % |
+| PD | circa 25 mm | 0 % |
+| PD con feedforward | circa 25 mm | 0 % |
+| PID, alfa 0,5 | circa 9,5 mm | 16 % |
+| PID, alfa 0,5, con feedforward | circa 5,4 mm | 84 % |
+| PID, alfa 1, con feedforward (il default di `input.py`) | circa 3,9 mm | 96 % |
 
 Con un bias di 0,01 g il PD non ce la fa per costruzione. Serve l'integrale, e serve il feedforward perché l'integrale
 non si carichi del ritardo d'inseguimento.
