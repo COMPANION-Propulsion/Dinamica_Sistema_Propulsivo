@@ -5,9 +5,11 @@ Salita della spinta: J dω/dt = Kt I - τ_aero(ω), con τ_aero = τ_rif (ω/ω_
 (I_max) e dalla tensione disponibile (V_bus d - ω/Kv)/R.  La spinta va con
 ω^2, quindi il 90 % della spinta si raggiunge a ω = sqrt(0,9) ω_rif.
 
-Margine di fase: anello di posizione su massa pura (1/(m s^2)), regolatore
-PD con zero a ω_c/3 (anticipo atan 3 = 71,6°) e attuatore del primo
-ordine con τ_a = t_90 / 2,3:   PM = 71,6° - atan(ω_c τ_a).
+Margine di fase dell'anello simulato (margine_fase_anello): PID di volo.py su massa pura
+e attuatore del primo ordine con τ_a = t_90 / 2,3, L = (kp + kd s + ki/s) / s² / (1 + τ_a s);
+pulsazione di taglio e margine sono calcolati numericamente.
+margine_fase(t90, ω_c) è invece il margine di un PD di riferimento con zero a ω_c/3
+(anticipo atan 3 = 71,6°): PM = 71,6° - atan(ω_c τ_a); non è l'anello simulato.
 
 Bilancio di momento per le ruote di reazione nella finestra libera:
 baricentro fuori asse, squilibrio tra le ventole di una coppia, coppia di
@@ -60,7 +62,30 @@ def tempo_inversione(motore, J_tot, N_rif, coppia_rif, V_bus, duty_max=0.95):
     return t + t_su
 
 
+def margine_fase_anello(kp, kd, ki, tau):
+    """Pulsazione di taglio (rad/s) e margine di fase (gradi) dell'anello simulato in volo.py.
+
+    L(s) = (kp + kd s + ki/s) / s^2 / (1 + tau s)  (PID su massa pura, attuatore del primo ordine).
+    Fase = atan2(kd w - ki/w, kp) - 180° (doppio integratore) - atan(w tau), quindi PM = atan2(...) - atan(w tau).
+    La pulsazione di taglio è l'ultimo punto in cui |L| scende sotto 1 (griglia logaritmica, poi bisezione)."""
+    def mod2(w):
+        return (kp ** 2 + (kd * w - ki / w) ** 2) / (w ** 4 * (1 + (w * tau) ** 2))
+    w = np.logspace(-4, 5, 20001)
+    sopra = np.nonzero(mod2(w) >= 1.0)[0]
+    if len(sopra) == 0 or sopra[-1] == len(w) - 1:
+        return math.nan, math.nan
+    a, b = w[sopra[-1]], w[sopra[-1] + 1]
+    for _ in range(200):
+        c = math.sqrt(a * b)
+        a, b = (c, b) if mod2(c) >= 1.0 else (a, c)
+    wc = math.sqrt(a * b)
+    pm = math.degrees(math.atan2(kd * wc - ki / wc, kp) - math.atan(wc * tau))
+    return wc, pm
+
+
 def margine_fase(t90, omega_c):
+    """Margine di un regolatore PD di riferimento con zero a omega_c/3 (NON l'anello simulato:
+    per quello vedi margine_fase_anello)."""
     tau_a = t90 / 2.3
     return math.degrees(math.atan(3.0)) - math.degrees(math.atan(omega_c * tau_a))
 

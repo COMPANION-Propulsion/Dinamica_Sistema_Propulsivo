@@ -10,6 +10,7 @@ import sys
 import numpy as np
 
 from . import pale as PA
+from . import propulsore as DY
 from . import volo as VO
 
 RISULTATI = []
@@ -108,6 +109,29 @@ def test_pale():
              f"{ris['caso_peggiore']['squilibrio_g_mm']:.4f} g·mm")
     # oscillazione della massa libera: x = U / M per una forza U w^2 sin(w t) a regime
     verifica("pale: oscillazione del cubo = U / M", abs(ris["caso_peggiore"]["spostamento_cubo_um"] - atteso * 1e-6 / 5.0 * 1e6) < 1e-12)
+
+
+def test_margine_fase():
+    """Margine di fase dell'anello: PD senza ritardo (formula analitica) e caso dell'input."""
+    # PD senza ritardo: w_c^2 = wn^2 (2 z^2 + sqrt(4 z^4 + 1)), PM = atan(2 z w_c / wn)
+    wn, z = 2.0, 0.8
+    kp, kd, ki = VO.guadagni(wn, z, 0.0)
+    wc, pm = DY.margine_fase_anello(kp, kd, ki, 0.0)
+    wc_a = wn * math.sqrt(2 * z * z + math.sqrt(4 * z ** 4 + 1))
+    pm_a = math.degrees(math.atan(2 * z * wc_a / wn))
+    verifica("margine: PD senza ritardo, taglio e margine analitici",
+             abs(wc - wc_a) < 1e-6 * wc_a and abs(pm - pm_a) < 1e-6, f"{wc:.4f} rad/s, {pm:.3f}° contro {wc_a:.4f} rad/s, {pm_a:.3f}°")
+    # PID con ritardo: |L| = 1 e fase coerenti con il calcolo diretto della funzione d'anello complessa
+    tau = 0.2856 / 2.3
+    kp, kd, ki = VO.guadagni(2.0, 0.8, 1.0)
+    wc, pm = DY.margine_fase_anello(kp, kd, ki, tau)
+    s = 1j * wc
+    L = (kp + kd * s + ki / s) / s ** 2 / (1 + tau * s)
+    pm_c = 180.0 + math.degrees(np.angle(L))
+    verifica("margine: |L(j wc)| = 1 e margine uguale a 180° + arg L", abs(abs(L) - 1) < 1e-9 and abs(pm - pm_c) < 1e-6,
+             f"|L| = {abs(L):.9f}, {pm:.3f}° contro {pm_c:.3f}°")
+    verifica("margine: caso dell'input (wn 2, zeta 0,8, alfa 1, t90 0,2856 s) circa 4,6 rad/s e 35°",
+             abs(wc - 4.6) < 0.3 and abs(pm - 35.0) < 2.0, f"{wc:.2f} rad/s, {pm:.1f}°")
 
 
 def esegui(stampa=print):
