@@ -9,6 +9,7 @@ import math
 import sys
 import numpy as np
 
+from . import pale as PA
 from . import volo as VO
 
 RISULTATI = []
@@ -45,6 +46,68 @@ def test_volo():
     # riferimento a minimo jerk: parte e arriva da fermo
     x, v, ac = VO.riferimento_minjerk(np.array([0.0, 3.0]), 0.3, 3.0)
     verifica("volo: riferimento da fermo a fermo", abs(x[0]) < 1e-12 and abs(x[1] - 0.3) < 1e-12 and abs(v[0]) < 1e-12 and abs(v[1]) < 1e-12)
+
+
+def test_disturbo():
+    """Disturbo del volo parabolico: bias, velocità iniziale, rumore in banda, azione integrale."""
+    g = VO.G0
+    # massa libera, bias costante e velocità iniziale: x(t) = v0 t - a t^2 / 2 (RK4 esatto sui polinomi)
+    a, v0, t_f = 0.01 * g, 0.01, 3.0
+    s = VO.simula_asse(5.0, 1.0, 0.1, 0.0, 0.0, 0.0, 1.0, lambda t: a + 0 * t, t_f, 1e-3, v0=v0)
+    atteso = v0 * t_f - 0.5 * a * t_f ** 2
+    verifica("disturbo: massa libera con bias e v0, x = v0 t - a t^2 / 2", abs(s["x"][-1] - atteso) < 1e-9,
+             f"{s['x'][-1] * 1000:.3f} mm contro {atteso * 1000:.3f} mm")
+    # rumore in banda: deviazione standard e nessuna potenza sopra la banda
+    rng = np.random.default_rng(0)
+    dt, n = 1e-3, 200_001
+    r = VO.rumore_in_banda(n, dt, 0.002 * g, 1.0, rng, 4)
+    sd = float(np.std(r)) / (0.002 * g)
+    spettro = np.abs(np.fft.rfft(r, axis=-1)) ** 2
+    f = np.fft.rfftfreq(n, dt)
+    fuori = float(spettro[:, f > 1.0].sum() / spettro.sum())
+    verifica("disturbo: rumore in banda, deviazione standard = sigma", abs(sd - 1) < 0.05, f"{sd:.3f} sigma")
+    verifica("disturbo: rumore in banda, niente potenza sopra la banda", fuori < 1e-12, f"quota {fuori:.1e}")
+    # PD con bias costante: errore fisso a / wn^2;  PID: errore che va a zero
+    wn, z = 2.0, 0.8
+    s = VO.simula_asse(5.0, 1e6, 1e-3, wn, z, 0.0, 1.0, lambda t: a + 0 * t, 20.0, 1e-3)
+    verifica("disturbo: PD con bias, errore fisso a / wn^2", abs(-s["x"][-1] - a / wn ** 2) < 1e-3 * a / wn ** 2,
+             f"{-s['x'][-1] * 1000:.2f} mm contro {a / wn ** 2 * 1000:.2f} mm")
+    s = VO.simula_asse(5.0, 1e6, 1e-3, wn, z, 0.0, 1.0, lambda t: a + 0 * t, 30.0, 1e-3, alfa_integrale=0.5)
+    verifica("disturbo: PID con bias, errore che va a zero", abs(s["x"][-1]) < 1e-3 * a / wn ** 2,
+             f"{abs(s['x'][-1]) * 1e6:.3f} µm")
+    # N campioni insieme = N simulazioni separate
+    ad = np.array([[a] * 2001, [-a] * 2001])
+    insieme = VO.simula_asse(5.0, 1.0, 0.1, wn, z, 0.3, 1.0, ad, 2.0, 1e-3, v0=[0.01, -0.01], alfa_integrale=0.5)
+    ok = all(np.allclose(VO.simula_asse(5.0, 1.0, 0.1, wn, z, 0.3, 1.0, ad[j], 2.0, 1e-3, v0=[0.01, -0.01][j],
+                                        alfa_integrale=0.5)["x"], insieme["x"][j], atol=1e-12) for j in range(2))
+    verifica("disturbo: simulazione di N campioni insieme uguale alle singole", ok)
+
+
+def test_pale():
+    """Squilibrio dei rotori: casi con risultato noto."""
+    r = 0.016
+    U = max(float(PA.squilibrio([1e-4] * Z, r)) for Z in (2, 3, 5, 7))
+    verifica("pale: pale uguali, squilibrio nullo", U < 1e-18, f"{U:.1e} kg m")
+    # caso peggiore: confronto con tutte le 2^Z combinazioni di pale al minimo e al massimo
+    ok = True
+    for Z in (2, 3, 4, 5, 6, 7):
+        tutte = np.array([[(s >> k) & 1 for k in range(Z)] for s in range(2 ** Z)], float)
+        ok &= abs(float(np.max(PA.squilibrio(tutte, 1.0))) - PA.fattore_peggiore(Z)) < 1e-12
+    verifica("pale: fattore del caso peggiore uguale al massimo su tutte le combinazioni (Z = 2..7)", ok)
+    dm = 1e-5
+    U = float(PA.squilibrio([1e-4 + dm, 1e-4, 1e-4], r))
+    verifica("pale: una pala più pesante di dm, U = dm r_cg", abs(U - dm * r) < 1e-15, f"{U:.3e} contro {dm * r:.3e} kg m")
+    # caso peggiore = una pala al massimo, le altre al minimo: nessun campione casuale lo supera
+    pa = dict(numero_pale=3, lunghezza_mm=10.0, larghezza_mm=10.0, spessore_mm=1.0, raggio_mozzo_mm=10.0,
+              densita_min_kg_m3=1000.0, densita_max_kg_m3=1200.0, giri_progetto_rpm=30000.0, giri_massimi_rpm=30000.0,
+              inerzia_rotore_motore_kgm2=0.0, ventole_fuori_asse=1, campioni=5000, seme=0)
+    ris = PA.analizza(pa, 5.0)
+    atteso = 200 * 1e-7 * 0.015 * 1e6                     # (rho_max - rho_min) V r_cg in g mm
+    verifica("pale: caso peggiore (rho_max - rho_min) V r_cg, mai superato",
+             abs(ris["caso_peggiore"]["squilibrio_g_mm"] - atteso) < 1e-9 and ris["monte_carlo"]["squilibrio_g_mm"]["max"] <= atteso,
+             f"{ris['caso_peggiore']['squilibrio_g_mm']:.4f} g·mm")
+    # oscillazione della massa libera: x = U / M per una forza U w^2 sin(w t) a regime
+    verifica("pale: oscillazione del cubo = U / M", abs(ris["caso_peggiore"]["spostamento_cubo_um"] - atteso * 1e-6 / 5.0 * 1e6) < 1e-12)
 
 
 def esegui(stampa=print):

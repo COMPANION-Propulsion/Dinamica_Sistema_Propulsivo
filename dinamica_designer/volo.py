@@ -4,10 +4,18 @@ Per ogni asse (la spinta è allineata agli assi e il cubo è trattato come massa
 
     m dv/dt = F - m a_d(t)        a_d = disturbo di accelerazione del volo parabolico (nel riferimento del cubo)
     tau dF/dt = F_cmd - F         attuatore del primo ordine, tau = t90 / 2,3
-    F_cmd = sat( m [ wn^2 (x_rif - x) + 2 zeta wn (v_rif - v) ] )    regolatore PD, saturato a F_max
+    F_cmd = sat( m [ kp (x_rif - x) + kd (v_rif - v) + ki int(x_rif - x) dt ] )    saturato a F_max
             (+ m a_rif se il feedforward è attivo)
 
+Guadagni per assegnazione dei poli (s + alfa wn)(s^2 + 2 zeta wn s + wn^2):
+    kp = (1 + 2 zeta alfa) wn^2,  kd = (2 zeta + alfa) wn,  ki = alfa wn^3       alfa = 0: PD puro
+L'integrale si ferma quando il comando satura (anti-windup per integrazione condizionata).
+
+Disturbo del volo parabolico (riferimento del cubo): bias costante + rumore gaussiano a media nulla limitato
+in banda + sinusoide facoltativa; il cubo parte con una velocità iniziale v0 (rilascio imperfetto).
+
 Riferimento: spostamento da fermo a fermo di d in un tempo T con profilo a minimo jerk (polinomio di quinto grado).
+simula_asse accetta anche N disturbi e N velocità iniziali insieme (Monte Carlo vettorizzato).
 
 Solo numpy.  Unità SI (m, s, kg, N, rad/s) salvo diversa indicazione.
 """
@@ -38,41 +46,90 @@ def disturbo_sinusoidale(t, ampiezza_g, frequenza_Hz, fase_deg):
     return ampiezza_g * G0 * np.sin(2 * math.pi * frequenza_Hz * np.asarray(t, float) + math.radians(fase_deg))
 
 
+def rumore_in_banda(n, dt, sigma, banda_Hz, rng, campioni=1):
+    """Rumore gaussiano a media nulla, passa-basso ideale a banda_Hz, deviazione standard sigma.
+
+    Rumore bianco di varianza unitaria filtrato in frequenza: il filtro tiene banda / f_Nyquist della varianza,
+    quindi si riscala di sqrt(f_Nyquist / banda).  Ritorna un array (campioni, n).
+    """
+    w = rng.standard_normal((campioni, n))
+    if sigma == 0:
+        return np.zeros((campioni, n))
+    f_nyq = 0.5 / dt
+    if banda_Hz >= f_nyq:
+        return sigma * w
+    W = np.fft.rfft(w, axis=-1)
+    W[:, np.fft.rfftfreq(n, dt) > banda_Hz] = 0.0
+    return sigma * math.sqrt(f_nyq / banda_Hz) * np.fft.irfft(W, n, axis=-1)
+
+
+def direzioni_casuali(rng, campioni):
+    """Versori distribuiti uniformemente sulla sfera, array (campioni, 3)."""
+    u = rng.standard_normal((campioni, 3))
+    return u / np.linalg.norm(u, axis=1, keepdims=True)
+
+
+def guadagni(wn, zeta, alfa=0.0):
+    """kp, kd, ki per i poli (s + alfa wn)(s^2 + 2 zeta wn s + wn^2); alfa = 0 dà il PD."""
+    return (1 + 2 * zeta * alfa) * wn ** 2, (2 * zeta + alfa) * wn, alfa * wn ** 3
+
+
 # ---------------------------------------------------------------- simulazione di un asse
 def simula_asse(m, F_max, t90, wn, zeta, d, T, a_dist, t_fin, dt=1e-3, feedforward=False,
-                riferimento=riferimento_minjerk, F_max_neg=None):
-    """Simula un asse; a_dist(t) -> accelerazione di disturbo (m/s^2).  Ritorna le serie temporali."""
+                riferimento=riferimento_minjerk, F_max_neg=None, v0=0.0, alfa_integrale=0.0):
+    """Simula un asse.  Ritorna le serie temporali.
+
+    a_dist: funzione a_dist(t) oppure array di accelerazioni di disturbo (m/s^2), forma (n,) o (N, n) per N
+    campioni insieme; v0: velocità iniziale, scalare o (N,).  Con N campioni le serie hanno forma (N, n).
+    """
     tau = max(t90 / 2.3, 1e-9)
     F_neg = F_max if F_max_neg is None else F_max_neg
+    kp, kd, ki = guadagni(wn, zeta, alfa_integrale)
     n = int(round(t_fin / dt)) + 1
     t = np.arange(n) * dt
     xr, vr, ar = riferimento(t, d, T)
-    ad = a_dist(t)
-    x = np.zeros(n); v = np.zeros(n); F = np.zeros(n); Fc = np.zeros(n)
-    sat = np.zeros(n, bool)
-    xs, vs, Fs = 0.0, 0.0, 0.0
+    ad = np.asarray(a_dist(t) if callable(a_dist) else a_dist, float)
+    v0 = np.asarray(v0, float)
+    gruppo = ad.ndim == 2 or v0.ndim == 1
+    N = max(ad.shape[0] if ad.ndim == 2 else 1, v0.size)
+    ad = np.broadcast_to(np.atleast_2d(ad), (N, n))
+    x = np.zeros((N, n)); v = np.zeros((N, n)); F = np.zeros((N, n)); Fc = np.zeros((N, n))
+    sat = np.zeros((N, n), bool)
+    xs, vs, Fs, xi = np.zeros(N), np.broadcast_to(v0, (N,)).copy(), np.zeros(N), np.zeros(N)
 
     def deriv(vv, FF, Fcmd, a_d):
         return vv, (FF - m * a_d) / m, (Fcmd - FF) / tau
 
     for k in range(n):
-        x[k], v[k], F[k] = xs, vs, Fs
-        cmd = m * (wn ** 2 * (xr[k] - xs) + 2 * zeta * wn * (vr[k] - vs))
+        x[:, k], v[:, k], F[:, k] = xs, vs, Fs
+        e = xr[k] - xs
+        cmd = m * (kp * e + kd * (vr[k] - vs) + ki * xi)
         if feedforward:
-            cmd += m * ar[k]
-        Fc[k] = min(max(cmd, -F_neg), F_max)
-        sat[k] = Fc[k] != cmd
+            cmd = cmd + m * ar[k]
+        Fc[:, k] = np.clip(cmd, -F_neg, F_max)
+        sat[:, k] = Fc[:, k] != cmd
         if k == n - 1:
             break
-        a0, a1 = ad[k], 0.5 * (ad[k] + ad[k + 1])
-        k1 = deriv(vs, Fs, Fc[k], a0)
-        k2 = deriv(vs + 0.5 * dt * k1[1], Fs + 0.5 * dt * k1[2], Fc[k], a1)
-        k3 = deriv(vs + 0.5 * dt * k2[1], Fs + 0.5 * dt * k2[2], Fc[k], a1)
-        k4 = deriv(vs + dt * k3[1], Fs + dt * k3[2], Fc[k], ad[k + 1])
-        xs += dt / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0])
-        vs += dt / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1])
-        Fs += dt / 6 * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2])
-    return {"t": t, "x": x, "v": v, "F": F, "F_cmd": Fc, "x_rif": xr, "v_rif": vr, "a_dist": ad, "saturato": sat}
+        if ki:
+            xi = xi + np.where(sat[:, k], 0.0, e * dt)
+        a0, a1, a2 = ad[:, k], 0.5 * (ad[:, k] + ad[:, k + 1]), ad[:, k + 1]
+        k1 = deriv(vs, Fs, Fc[:, k], a0)
+        k2 = deriv(vs + 0.5 * dt * k1[1], Fs + 0.5 * dt * k1[2], Fc[:, k], a1)
+        k3 = deriv(vs + 0.5 * dt * k2[1], Fs + 0.5 * dt * k2[2], Fc[:, k], a1)
+        k4 = deriv(vs + dt * k3[1], Fs + dt * k3[2], Fc[:, k], a2)
+        xs = xs + dt / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0])
+        vs = vs + dt / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1])
+        Fs = Fs + dt / 6 * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2])
+    s = {"t": t, "x": x, "v": v, "F": F, "F_cmd": Fc, "x_rif": xr, "v_rif": vr, "a_dist": np.array(ad), "saturato": sat}
+    if not gruppo:
+        for c in ("x", "v", "F", "F_cmd", "a_dist", "saturato"):
+            s[c] = s[c][0]
+    return s
+
+
+def campione(s, j):
+    """Serie del campione j di una simulazione a N campioni."""
+    return {k: (a[j] if isinstance(a, np.ndarray) and a.ndim == 2 else a) for k, a in s.items()}
 
 
 # ---------------------------------------------------------------- indicatori

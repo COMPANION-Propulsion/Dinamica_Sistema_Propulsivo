@@ -26,7 +26,8 @@ def test_run_scrive_il_caso(tmp_path):
     cart = cli.run(_input(tmp_path, None, 5))
     assert os.path.basename(cart).startswith("m5.00kg_d0.30m_t3.0s_h")
     for f in ("caso.json", "input_usato.py", "log.txt", "00_sintesi/RISULTATO.md", "00_sintesi/riepilogo.json",
-              "01_grafici/01_moto_tre_assi.svg", "01_grafici/02_spazio_massimo.svg", "02_dati/serie_temporali.csv"):
+              "01_grafici/01_moto_tre_assi.svg", "01_grafici/02_spazio_massimo.svg", "01_grafici/03_monte_carlo.svg",
+              "01_grafici/04_pale.svg", "02_dati/serie_temporali.csv", "02_dati/monte_carlo.csv"):
         assert os.path.isfile(os.path.join(cart, f)), f
     assert os.path.isfile(tmp_path / "registro_esecuzioni.csv")
 

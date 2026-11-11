@@ -12,15 +12,18 @@ Sezioni:
    1  CORPO           massa (concentrata nel baricentro)
    2  ATTUATORE       spinta massima per asse e tempo di salita (dall'analisi)
    3  MANOVRA         spostamento richiesto, tempo, finestra di volo, tolleranza
-   4  DISTURBO        accelerazione residua del volo parabolico
-   5  REGOLATORE      PD sulla posizione
+   4  DISTURBO        accelerazione residua del volo parabolico, velocità al rilascio, Monte Carlo
+   5  REGOLATORE      PD o PID sulla posizione
    6  ENERGIA         potenza in funzione della spinta
    7  RUOTE           bilancio delle ruote di reazione (dai dati dell'analisi)
+   8  PALE            squilibrio dei rotori: pale stampate in 3D con densità diversa
 
 Convenzione degli assi: X, Y, Z come nell'analisi (X destra, Y fronte, Z alto).  Gli elenchi [X, Y, Z]
 seguono sempre questo ordine.  I tre assi sono indipendenti e si muovono contemporaneamente.
 
-Fonti: [ANL] risultato dell'ultima run di S4 dell'analisi, [EUG] ESA User Guide, [XLS] foglio di dimensionamento.
+Fonti: [ANL] risultato dell'ultima run di S4 dell'analisi, [EUG] ESA User Guide, [XLS] foglio di dimensionamento,
+[ERM] ERMES, ESA Fly Your Thesis 2022, Experiment Report v8 (Documentazione), [DPL] Deploy! Proposal (modello ESA),
+[team] proposta della chat del team (bias 0,01 g, rumore a 1 Hz, velocità iniziale in direzione casuale).
 SEGNAPOSTO = valore da sostituire appena disponibile un dato vero.
 """
 
@@ -72,19 +75,35 @@ MANOVRA = {
 # =============================================================================
 # 4. DISTURBO   (accelerazione residua nel riferimento del cubo)
 # =============================================================================
+# Modello: a_d(t) = bias costante + rumore gaussiano a media nulla in banda + sinusoide (facoltativa);
+# il cubo parte con una velocità iniziale v0.  Bias e v0 hanno direzione casuale, diversa in ogni campione del
+# Monte Carlo; il "caso peggiore" mette il modulo pieno di bias e v0 su ogni asse, contro il moto.
+# Dati di riferimento: [ERM] Fig. 6.3.2, accelerometro Novespace (volo 302, A310): nei 22 s di 0 g |a| < 0,02 g su
+# tutti gli assi, componente lenta ±0,01 g (deriva e oscillazione di circa 0,15 Hz), rumore veloce di circa ±0,003 g.
 DISTURBO = {
-    "ampiezza_g": [0.01, 0.01, 0.01],    # [EUG] ±0,01 g sugli assi laterali: ipotesi per tutti e tre
-    "frequenza_Hz": [1.0, 1.0, 1.0],     # SEGNAPOSTO: serve una registrazione reale di volo
-    "fase_gradi": [0.0, 120.0, 240.0],   # fasi diverse per i tre assi (0, 0, 0 = disturbo in fase)
+    "bias_g": 0.01,                      # [ERM, team] modulo del bias costante, direzione casuale
+    "rumore_sigma_g": 0.002,             # [ERM] deviazione standard per asse del rumore (±0,003 g visti ≈ 1,5 sigma)
+    "rumore_banda_Hz": 1.0,              # [team] banda del rumore (passa-basso ideale)
+    "velocita_iniziale_m_s": 0.01,       # [ERM] modulo di v0 al rilascio (Target: 0,005 ± 0,001 m/s per asse)
+    "sinusoide_ampiezza_g": [0.0, 0.0, 0.0],      # facoltativa; prova: 0,01 g a 0,15 Hz (oscillazione lenta di Gz)
+    "sinusoide_frequenza_Hz": [0.15, 0.15, 0.15], # [ERM]
+    "sinusoide_fase_gradi": [0.0, 120.0, 240.0],  # usate nel caso peggiore; nel Monte Carlo fasi casuali
+    "campioni_monte_carlo": 200,         # 0 = solo il caso peggiore
+    "seme": 1,                           # seme dei numeri casuali: stessa run, stessi campioni
 }
+# Prova di robustezza: il g-jitter "di manuale" ESA ([DPL] §6.3.2) è ±0,05 g a circa 1 Hz, cioè rumore_sigma_g ≈ 0,025.
 
 # =============================================================================
-# 5. REGOLATORE   (PD sulla posizione, massa pura)
+# 5. REGOLATORE   (PD o PID sulla posizione, massa pura)
 # =============================================================================
 REGOLATORE = {
     "frequenza_propria_rad_s": 2.0,      # wn: banda dell'anello di posizione
     "smorzamento": 0.8,                  # zeta
-    "feedforward_riferimento": False,    # True = aggiunge m * a_riferimento al comando (segue meglio la traiettoria)
+    "polo_integrale_su_wn": 1.0,         # alfa: 0 = PD; > 0 = PID con un terzo polo in -alfa wn.
+                                         # Con il PD il bias lascia un errore fisso bias / wn^2 (0,01 g, wn 2: 24,5 mm);
+                                         # PID alfa 1 + feedforward: 99 % delle manovre assestate nel Monte Carlo
+    "feedforward_riferimento": True,     # True = aggiunge m * a_riferimento al comando (segue meglio la traiettoria;
+                                         # senza, l'integrale si carica del ritardo d'inseguimento)
 }
 
 # =============================================================================
@@ -108,4 +127,28 @@ RUOTE = {
     "momento_rotori_in_avvio_Nms": 0.0,  # [ANL] momento angolare dei rotori non compensati
     "momento_ruote_max_Nms": 0.15,       # [XLS] SEGNAPOSTO: momento angolare massimo delle ruote
     "frequenze_margine_fase_rad_s": [1.0, 2.0, 4.0],
+}
+
+# =============================================================================
+# 8. PALE   (squilibrio dei rotori con pale stampate in 3D, densità diversa da pala a pala)
+# =============================================================================
+# Ogni pala è un parallelepipedo lunghezza x larghezza x spessore, attaccato al mozzo.  La densità di ogni pala è
+# estratta a caso in [densita_min, densita_max]: le masse diverse spostano il baricentro del rotore e nasce una forza
+# rotante ai giri della ventola.  Calcolo in forma chiusa (vedi dinamica_designer/pale.py), fuori dalla simulazione
+# nel tempo.  Valori di partenza dall'ottimo S4 dell'analisi: D = 42 mm, mozzo/punta 0,524, corda / D = 0,25.
+PALE = {
+    "numero_pale": 3,                    # [ANL] tipo "elica_intubata" dell'ottimo S4 (Z = 3)
+    "lunghezza_mm": 9.5,                 # lunghezza radiale, dal mozzo alla punta (21 - 11 mm, meno 0,5 mm di gioco)
+    "larghezza_mm": 10.5,                # larghezza = corda della pala
+    "spessore_mm": 1.0,                  # SEGNAPOSTO: circa 10 % della corda, vicino al minimo stampabile
+    "raggio_mozzo_mm": 11.0,             # [ANL] dove comincia la pala: fissa il raggio del baricentro
+    "densita_min_kg_m3": 1150.0,         # range di densità delle pale stampate.  PLA in FDM al 100 %: il filamento
+    "densita_max_kg_m3": 1250.0,         # è 1240 kg/m^3, i vuoti tra le linee tolgono dal 2 all'8 %.  Altri
+                                         # materiali: resina SLA 1100-1200, PETG 1230-1270, PA12 SLS 950-1010
+    "giri_progetto_rpm": 45646.0,        # [ANL] "Progetto ottimo", S4
+    "giri_massimi_rpm": 46823.0,         # [ANL] giri massimi ammessi, S4
+    "inerzia_rotore_motore_kgm2": 1.2e-7,# [ANL] motore 1404 3800 kV
+    "ventole_fuori_asse": 4,             # [ANL] S4: 6 ventole, 2 per asse; su un asse spingono quelle degli altri due
+    "campioni": 2000,                    # rotori estratti nel Monte Carlo
+    "seme": 1,
 }
