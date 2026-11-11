@@ -49,7 +49,7 @@ ESECUZIONE = {
 # 1. CORPO
 # =============================================================================
 CORPO = {
-    "massa_kg": 4.31,           # [ANL] massa stimata di S4, run del 04/11 (obiettivo 4 kg)
+    "massa_kg": 4.5,            # [team] massa di missione, la stessa di Dimensionamento e Analisi (stima S4 del 04/11: 4,31 kg)
 }
 
 # =============================================================================
@@ -66,8 +66,8 @@ ATTUATORE = {
 # 3. MANOVRA
 # =============================================================================
 MANOVRA = {
-    "distanza_m": [0.3, 0.3, 0.3],       # [XLS] SEGNAPOSTO: spostamento richiesto su X, Y, Z (da fermo a fermo)
-    "tempo_manovra_s": 3.0,              # [XLS] SEGNAPOSTO: tempo per completarlo
+    "distanza_m": [0.2, 0.2, 0.2],       # [team] spostamento richiesto su X, Y, Z (da fermo a fermo), come negli altri due progetti
+    "tempo_manovra_s": 5.0,              # [team] tempo per completarlo, uguale alla finestra
     "finestra_s": 5.0,                   # [ESA] finestra utile per oggetti liberi: si simula fino a qui
     "tolleranza_posizione_mm": 5.0,      # per il tempo di assestamento
     "profilo": "minimo_jerk",            # "minimo_jerk" (polinomio di quinto grado) oppure "gradino"
