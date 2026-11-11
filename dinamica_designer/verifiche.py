@@ -9,6 +9,7 @@ import math
 import sys
 import numpy as np
 
+from . import cli as CLI
 from . import pale as PA
 from . import propulsore as DY
 from . import volo as VO
@@ -132,6 +133,76 @@ def test_margine_fase():
              f"|L| = {abs(L):.9f}, {pm:.3f}° contro {pm_c:.3f}°")
     verifica("margine: caso dell'input (wn 2, zeta 0,8, alfa 1, t90 0,2856 s) circa 4,6 rad/s e 35°",
              abs(wc - 4.6) < 0.3 and abs(pm - 35.0) < 2.0, f"{wc:.2f} rad/s, {pm:.1f}°")
+
+
+def test_bang_bang():
+    """Riferimento bang-bang: da fermo a fermo, accelerazione 4 d / T^2 per T/2 e poi l'opposta."""
+    d, T = 0.3, 3.0
+    t = np.linspace(0.0, 2 * T, 60001)
+    x, v, a = VO.riferimento_bang_bang(t, d, T)
+    verifica("bang-bang: x(0) = 0, x(T) = d, v(0) = v(T) = 0 e fermo in d dopo T",
+             abs(x[0]) < 1e-12 and abs(x[30000] - d) < 1e-12 and abs(v[0]) < 1e-12 and abs(v[30000]) < 1e-12
+             and np.all(x[30000:] == d) and np.all(v[30000:] == 0.0))
+    verifica("bang-bang: picco di accelerazione 4 d / T^2", abs(np.max(np.abs(a)) - 4 * d / T ** 2) < 1e-12,
+             f"{np.max(np.abs(a)):.5f} contro {4 * d / T ** 2:.5f} m/s^2")
+    e = 1e-9
+    xm, vm, _ = VO.riferimento_bang_bang(np.array([T / 2 - e, T / 2 + e]), d, T)
+    verifica("bang-bang: x e v continue a T/2 (x = d/2, v = 2 d / T)",
+             abs(xm[0] - xm[1]) < 1e-8 and abs(vm[0] - vm[1]) < 1e-8 and abs(xm[0] - d / 2) < 1e-8
+             and abs(vm[0] - 2 * d / T) < 1e-8)
+    dt = t[1] - t[0]
+    verifica("bang-bang: velocità e posizione coerenti con l'accelerazione (integrale)",
+             abs(np.trapezoid(a, t)) < 1e-3 and abs(np.max(np.abs(np.diff(x) / dt - v[:-1]))) < 1e-3 * 4 * d / T)
+
+
+def test_ambiente():
+    """Ambiente: sigma = 1 come prima, spinta massima ~ sigma, potenza a spinta fissata ~ 1/sqrt(sigma), potenza totale."""
+    m, F_max, t90, wn, z, d, T, dt = 4.5, 1.17, 0.15, 2.0, 0.8, 0.2, 5.0, 1e-3
+    P_rif, F_rif, esp = 16.5, 1.17, 1.5
+    s = VO.simula_asse(m, F_max, t90, wn, z, d, T, lambda t: 0.01 * VO.G0 + 0 * t, 5.0, dt, True,
+                       VO.riferimento_minjerk, v0=0.01, alfa_integrale=1.0)
+    ind = VO.indicatori(s, d, T, 0.005, F_max, P_rif, F_rif, esp, dt)
+    P_vecchia = P_rif * (np.abs(s["F"]) / F_rif) ** esp
+    verifica("ambiente: sigma = 1 riproduce esattamente gli indicatori di prima",
+             ind == VO.indicatori(s, d, T, 0.005, F_max, P_rif, F_rif, esp, dt, sigma=1.0)
+             and ind["energia_J"] == float(np.trapezoid(P_vecchia, s["t"])) and ind["potenza_picco_W"] == float(np.max(P_vecchia)),
+             f"{ind['energia_J']:.6f} J")
+    # spinta massima dell'ambiente = spinta di progetto x sigma (sul cfg dell'ambiente costruito da cli)
+    base = {sez: {} for sez in CLI.SEZ_AMBIENTE}
+    base["ATTUATORE"] = {"spinta_max_positiva_N": [1.17, 1.0, 0.5], "spinta_max_negativa_N": [1.17, 1.0, 0.5],
+                         "pressione_progetto_Pa": 100000.0}
+    base["AMBIENTI"] = {"a": {"pressione_Pa": 82500.0}, "b": {"pressione_Pa": 100000.0}, "c": {"pressione_Pa": 50000.0}}
+    ok = True
+    for n, sg in (("a", 0.825), ("b", 1.0), ("c", 0.5)):
+        c = CLI.cfg_ambiente(base, n)
+        ok &= abs(c["AMBIENTE"]["sigma"] - sg) < 1e-12
+        ok &= all(abs(f - f0 * sg) < 1e-12 for f, f0 in zip(c["ATTUATORE"]["spinta_max_positiva_N"], [1.17, 1.0, 0.5]))
+        ok &= all(abs(f - f0 * sg) < 1e-12 for f, f0 in zip(c["ATTUATORE"]["spinta_max_negativa_N"], [1.17, 1.0, 0.5]))
+        ok &= abs(c["AMBIENTE"]["fattore_potenza"] - 1 / math.sqrt(sg)) < 1e-12
+    ok &= base["ATTUATORE"]["spinta_max_positiva_N"] == [1.17, 1.0, 0.5]            # la base non cambia
+    verifica("ambiente: la spinta massima scala con sigma (e l'input di base non cambia)", ok)
+    # potenza a spinta fissata: P(sigma) = P(1) / sqrt(sigma)
+    F = np.array([0.2, 0.6, 1.17])
+    r = [VO.potenza_elettrica(F, P_rif, F_rif, esp, sg) * math.sqrt(sg) / VO.potenza_elettrica(F, P_rif, F_rif, esp) for sg in (0.5, 0.825, 2.0)]
+    verifica("ambiente: la potenza a spinta fissata scala con 1 / sqrt(sigma)", np.allclose(r, 1.0, atol=1e-14, rtol=0)
+             and abs(VO.potenza_elettrica(1.17, 16.5, 1.17, 1.5, 0.25) - 33.0) < 1e-12,
+             "sigma 0,25: 16,5 W -> 33 W")
+    # energia nel tempo: stesso andamento di F, energia ~ 1 / sqrt(sigma)
+    e1 = VO.indicatori(s, d, T, 0.005, F_max, P_rif, F_rif, esp, dt, sigma=1.0)["energia_J"]
+    e2 = VO.indicatori(s, d, T, 0.005, F_max, P_rif, F_rif, esp, dt, sigma=0.64)["energia_J"]
+    verifica("ambiente: energia a parità di spinta nel tempo ~ 1 / sqrt(sigma)", abs(e2 / e1 - 1 / 0.8) < 1e-12)
+    # potenza totale = somma dei tre assi: serie, energia (trapezi lineari), picco, corrente
+    serie = [VO.simula_asse(m, F_max, t90, wn, z, dd, T, lambda t, a=a: a * VO.G0 + 0 * t, 5.0, dt, True,
+                            VO.riferimento_minjerk, v0=0.01, alfa_integrale=1.0) for dd, a in ((0.2, 0.01), (0.1, 0.002), (-0.15, 0.005))]
+    P = [VO.potenza_elettrica(x["F"], P_rif, F_rif, esp, 0.825) for x in serie]
+    tot = VO.potenza_totale(P, serie[0]["t"], 24.0)
+    E = sum(VO.indicatori(x, dd, T, 0.005, F_max, P_rif, F_rif, esp, dt, sigma=0.825)["energia_J"]
+            for x, dd in zip(serie, (0.2, 0.1, -0.15)))
+    verifica("potenza totale: somma dei tre assi nel tempo, energia = somma delle energie, corrente = picco / tensione",
+             np.array_equal(tot["P_tot"], P[0] + P[1] + P[2]) and abs(tot["energia_J"] - E) < 1e-9 * E
+             and tot["potenza_picco_W"] == float(np.max(P[0] + P[1] + P[2])) and tot["potenza_picco_W"] <= sum(float(np.max(x)) for x in P) + 1e-12
+             and abs(tot["corrente_picco_A"] - tot["potenza_picco_W"] / 24.0) < 1e-15
+             and abs(tot["potenza_media_W"] - E / 5.0) < 1e-9 * E, f"energia {E:.2f} J")
 
 
 def esegui(stampa=print):

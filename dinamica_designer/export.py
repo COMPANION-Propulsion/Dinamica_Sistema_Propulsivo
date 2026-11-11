@@ -1,4 +1,5 @@
-"""File di uscita del caso: grafici (01_grafici), serie temporali (02_dati), sintesi (00_sintesi)."""
+"""File di uscita del caso: per ogni ambiente grafici (01_grafici), serie temporali (02_dati), sintesi (00_sintesi);
+al livello del caso Pale/ (squilibrio dei rotori) e CONFRONTO.md (tabella affiancata degli ambienti)."""
 import csv
 import json
 import os
@@ -45,10 +46,19 @@ def _salva(fig, percorso, formati):
 
 
 # ---------------------------------------------------------------- 01_grafici
-def grafico_moto(serie, cfg, percorso, formati):
-    """Posizione, velocità, spinta e disturbo sui tre assi."""
+def grafico_moto(serie, cfg, potenza, percorso, formati):
+    """Posizione, velocità, spinta e disturbo sui tre assi; in basso la potenza elettrica (per asse e totale)."""
     ma, at = cfg["MANOVRA"], cfg["ATTUATORE"]
-    fig, ax = plt.subplots(4, 3, figsize=(13, 10), sharex=True)
+    P_assi, P_tot = potenza
+    fig = plt.figure(figsize=(13, 12))
+    gs = fig.add_gridspec(5, 3)
+    ax = np.empty((4, 3), dtype=object)
+    for r in range(4):
+        for c in range(3):
+            ax[r, c] = fig.add_subplot(gs[r, c], sharex=ax[0, 0] if (r or c) else None)
+    for r in range(3):
+        for c in range(3):
+            plt.setp(ax[r, c].get_xticklabels(), visible=False)
     for i, s in enumerate(serie):
         t = s["t"]
         a = ax[0, i]
@@ -68,8 +78,16 @@ def grafico_moto(serie, cfg, percorso, formati):
         ax[3, i].set_ylabel("disturbo (mg)"); ax[3, i].set_xlabel("t (s)")
         for r in range(4):
             ax[r, i].axvline(ma["tempo_manovra_s"], color="#868e96", lw=0.6, ls=":")
+    pw = fig.add_subplot(gs[4, :], sharex=ax[0, 0])
+    for i, P in enumerate(P_assi):
+        pw.plot(serie[0]["t"], P, color=COL[i], lw=0.9, label=f"asse {ASSI[i]}")
+    pw.plot(serie[0]["t"], P_tot, "k", lw=1.5, label="totale")
+    pw.axvline(ma["tempo_manovra_s"], color="#868e96", lw=0.6, ls=":")
+    pw.set_ylabel("potenza elettrica (W)"); pw.set_xlabel("t (s)"); pw.legend(fontsize=7, ncol=4)
     tipo = "PID" if cfg["REGOLATORE"].get("polo_integrale_su_wn", 0.0) else "PD"
-    fig.suptitle(f"S4 — caso peggiore sui tre assi: posizione, velocità, spinta, disturbo (massa puntiforme, {tipo})")
+    fig.suptitle(f"{cfg['AMBIENTE']['nome']} — caso peggiore sui tre assi: posizione, velocità, spinta, disturbo, potenza "
+                 f"(massa puntiforme, {tipo})")
+    fig.tight_layout()
     return _salva(fig, percorso, formati)
 
 
@@ -93,7 +111,7 @@ def grafico_monte_carlo(mc, cfg, percorso, formati):
         for s in (-tol, tol):
             h.axvline(s, color="#c92a2a", lw=0.8, ls=":")
         h.set_xlabel(f"errore a t = {ma['finestra_s']:g} s (mm)"); h.set_ylabel("campioni")
-    fig.suptitle(f"Monte Carlo del disturbo: {mc['campioni']} campioni, assestati su tutti gli assi "
+    fig.suptitle(f"{cfg['AMBIENTE']['nome']}, Monte Carlo del disturbo: {mc['campioni']} campioni, assestati su tutti gli assi "
                  f"{mc['quota_tutti_assestati']:.0%} (banda grigia: tolleranza ±{tol:g} mm)")
     fig.tight_layout()
     return _salva(fig, percorso, formati)
@@ -139,22 +157,23 @@ def grafico_spazio_massimo(cfg, percorso, formati):
     ax.axhline(ma["distanza_m"][0], color="k", lw=0.8, ls=":")
     ax.axvline(ma["tempo_manovra_s"], color="k", lw=0.8, ls=":")
     ax.set_xlabel("tempo della manovra (s)"); ax.set_ylabel("spazio massimo da fermo a fermo (m)")
-    ax.set_title("Spazio percorribile in un tempo dato alla spinta massima (accelera t/2, frena t/2)")
+    ax.set_title(f"{cfg['AMBIENTE']['nome']}: spazio percorribile in un tempo dato alla spinta massima (accelera t/2, frena t/2)")
     ax.legend(fontsize=7)
     return _salva(fig, percorso, formati)
 
 
 # ---------------------------------------------------------------- 02_dati
-def scrivi_serie(serie, passo_integrazione_s, percorso):
-    """Serie temporali dei tre assi ogni 0,01 s (separatore ;)."""
+def scrivi_serie(serie, P_assi, P_tot, passo_integrazione_s, percorso):
+    """Serie temporali dei tre assi, potenza per asse e totale, ogni 0,01 s (separatore ;)."""
     with open(percorso, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh, delimiter=";")
-        w.writerow(["t_s"] + [f"{c}_{a}" for a in ASSI for c in NOMI_SERIE])
+        w.writerow(["t_s"] + [f"{c}_{a}" for a in ASSI for c in NOMI_SERIE] + [f"P_{a}_W" for a in ASSI] + ["P_tot_W"])
         passo = max(1, int(round(0.01 / passo_integrazione_s)))
         for k in range(0, len(serie[0]["t"]), passo):
             riga = [round(float(serie[0]["t"][k]), 6)]
             for s in serie:
                 riga += [round(float(s[c][k]), 6) for c in CAMPI_SERIE]
+            riga += [round(float(P[k]), 6) for P in P_assi] + [round(float(P_tot[k]), 6)]
             w.writerow(riga)
     return percorso
 
@@ -177,16 +196,25 @@ def scrivi_riepilogo(riep, percorso):
 
 
 def scrivi_risultato(riep, cfg, nome_caso, file_scritti, percorso):
-    """RISULTATO.md: i numeri del caso su una pagina."""
+    """RISULTATO.md di un ambiente: i numeri su una pagina."""
     ma, at, di, rg, ru = cfg["MANOVRA"], cfg["ATTUATORE"], cfg["DISTURBO"], cfg["REGOLATORE"], cfg["RUOTE"]
-    rw = riep["ruote"]
-    L = [f"# Dinamica di volo, caso `{nome_caso}`", "",
-         f"Run del {riep['data']}, impronta degli input `{riep['impronta']}`.", "",
+    rw, amb, pot = riep["ruote"], riep["ambiente"], riep["potenza_totale"]
+    en = cfg["ENERGIA"]
+    L = [f"# Dinamica di volo, caso `{nome_caso}`, ambiente `{amb['nome']}`", "",
+         f"Run del {riep['data']}, impronta degli input `{riep['impronta']}`. Confronto tra gli ambienti: `../CONFRONTO.md`; "
+         "squilibrio delle pale (uguale per tutti gli ambienti): `../Pale/PALE.md`.", "",
+         "## Ambiente", "",
+         f"- pressione {amb['pressione_Pa']:g} Pa, sigma = pressione / pressione di progetto ({at['pressione_progetto_Pa']:g} Pa) = "
+         f"**{amb['sigma']:.4f}**",
+         f"- spinta massima = spinta di progetto {amb['spinta_max_progetto_N']} N x sigma = {at['spinta_max_positiva_N']} N (+), "
+         f"{at['spinta_max_negativa_N']} N (−)",
+         f"- fattore di potenza 1 / sqrt(sigma) = **{amb['fattore_potenza']:.4f}**: potenza per una spinta F = "
+         f"P_rif (F / F_rif)^{en['esponente']:g} x {amb['fattore_potenza']:.4f}, con P_rif = {en['potenza_rif_W']:g} W a "
+         f"F_rif = {en['spinta_rif_N']:g} N", "",
          "## Input", "",
          f"- massa {riep['massa_kg']:g} kg nel baricentro; manovra {ma['distanza_m']} m in {ma['tempo_manovra_s']:g} s "
          f"(profilo `{ma['profilo']}`), finestra simulata {ma['finestra_s']:g} s, tolleranza {ma['tolleranza_posizione_mm']:g} mm",
-         f"- spinta massima [X, Y, Z]: {at['spinta_max_positiva_N']} N (+), {at['spinta_max_negativa_N']} N (−); "
-         f"tempo di salita al 90 % {at['tempo_salita_90_s']:g} s",
+         f"- tempo di salita al 90 % {at['tempo_salita_90_s']:g} s",
          f"- {descrivi_regolatore(rg)}",
          f"- disturbo: {descrivi_disturbo(di)}", "",
          "## Risultati per asse, caso peggiore", "",
@@ -197,9 +225,12 @@ def scrivi_risultato(riep, cfg, nome_caso, file_scritti, percorso):
          "|---|---|---|---|---|---|---|---|---|---|"]
     for a, x in riep["assi"].items():
         ass = f"{x['tempo_assestamento_s']:.2f}" if x["tempo_assestamento_s"] is not None else "oltre la finestra"
-        L.append(f"| {a} | {x['errore_a_T_mm']:.1f} | {x['errore_max_mm']:.1f} | {x['sovraelongazione_mm']:.1f} | {ass} "
+        L.append(f"| {a} | {x['errore_a_T_mm']:.2f} | {x['errore_max_mm']:.2f} | {x['sovraelongazione_mm']:.2f} | {ass} "
                  f"| {x['spinta_max_usata_N']:.3f} | {x['spinta_su_massima']:.0%} | {x['tempo_in_saturazione_s']:.2f} "
-                 f"| {x['energia_J']:.0f} | {x['potenza_picco_W']:.0f} |")
+                 f"| {x['energia_J']:.1f} | {x['potenza_picco_W']:.2f} |")
+    L += ["", f"**Potenza elettrica totale** (somma dei tre assi, batteria {en['tensione_batteria_V']:g} V), caso peggiore: "
+          f"picco {pot['potenza_picco_W']:.2f} W, energia nella finestra {pot['energia_J']:.1f} J, potenza media "
+          f"{pot['potenza_media_W']:.2f} W, corrente di picco {pot['corrente_picco_A']:.3f} A."]
     mc = riep.get("monte_carlo")
     if mc:
         L += ["", f"## Monte Carlo ({mc['campioni']} campioni, seme {mc['seme']})", "",
@@ -217,35 +248,17 @@ def scrivi_risultato(riep, cfg, nome_caso, file_scritti, percorso):
                      f"| {f3(st['spinta_su_massima'], '{:.0%}')} | {f3(st['tempo_assestamento_s'], '{:.2f}')} "
                      f"| {x['quota_assestati']:.0%} | {x['quota_in_tolleranza_a_T']:.0%} |")
         L += ["", f"Assestati su tutti e tre gli assi entro la finestra: **{mc['quota_tutti_assestati']:.0%}** dei campioni "
-              "(— = qualche campione non si assesta nella finestra)."]
+              "(— = qualche campione non si assesta nella finestra).", "",
+              "Potenza elettrica totale (somma dei tre assi), media / 95° percentile / massimo:", "",
+              "| picco [W] | energia [J] | potenza media [W] | corrente di picco [A] |", "|---|---|---|---|",
+              "| " + " | ".join(f3(mc["potenza_totale"][k], f) for k, f in (
+                  ("potenza_picco_W", "{:.2f}"), ("energia_J", "{:.1f}"), ("potenza_media_W", "{:.2f}"),
+                  ("corrente_picco_A", "{:.3f}"))) + " |"]
     if not rg.get("polo_integrale_su_wn", 0.0) and di["bias_g"]:
         e_inf = di["bias_g"] * VO.G0 / rg["frequenza_propria_rad_s"] ** 2 * 1000
         L += ["", f"Con il PD un bias costante lascia un errore fisso bias / ωn² = **{e_inf:.1f} mm** "
               f"(tolleranza {ma['tolleranza_posizione_mm']:g} mm): serve l'azione integrale "
               "(`REGOLATORE['polo_integrale_su_wn']` > 0) o una banda più alta."]
-    pl = riep.get("pale")
-    if pl:
-        pa, pg, pm = cfg["PALE"], pl["caso_peggiore"], pl["monte_carlo"]
-        L += ["", "## Pale: squilibrio dei rotori", "",
-              f"{pa['numero_pale']} pale per rotore, ognuna un parallelepipedo {pa['lunghezza_mm']:g} x {pa['larghezza_mm']:g} x "
-              f"{pa['spessore_mm']:g} mm (lunghezza x larghezza x spessore) dal mozzo di raggio {pa['raggio_mozzo_mm']:g} mm; "
-              f"densità di ogni pala a caso tra {pa['densita_min_kg_m3']:g} e {pa['densita_max_kg_m3']:g} kg/m³, "
-              f"quindi massa tra {pl['massa_pala_g']['min']:.3f} e {pl['massa_pala_g']['max']:.3f} g. "
-              f"Giri di progetto {pa['giri_progetto_rpm']:g} giri/min ({pl['frequenza_Hz']:.0f} Hz).", "",
-              "| grandezza (una ventola) | media | 95 % | caso peggiore |", "|---|---|---|---|"]
-        for k, nome, fmt in (("squilibrio_g_mm", "squilibrio [g·mm]", "{:.3f}"), ("forza_N", "forza rotante [N]", "{:.2f}"),
-                             ("accelerazione_cubo_g", "accelerazione del cubo [g]", "{:.3f}"),
-                             ("spostamento_cubo_um", "oscillazione del cubo [µm]", "{:.3f}"),
-                             ("velocita_cubo_mm_s", "velocità di vibrazione del cubo [mm/s]", "{:.3f}")):
-            L.append(f"| {nome} | {fmt.format(pm[k]['media'])} | {fmt.format(pm[k]['p95'])} | {fmt.format(pg[k])} |")
-        L += ["",
-              f"Nel caso peggiore la forza di una ventola è il **{pl['forza_peggiore_su_spinta']:.0%} della spinta massima**, "
-              f"ma gira a {pl['frequenza_Hz']:.0f} Hz e il cubo si sposta solo di {pg['spostamento_cubo_um']:.3f} µm "
-              f"({pl['spostamento_peggiore_su_un_asse_um']:.3f} µm con {pl['ventole_fuori_asse']} ventole in fase): "
-              "sulla traiettoria non pesa. Pesa sulle vibrazioni (cuscinetti, struttura, sensori inerziali): i rotori vanno equilibrati.",
-              f"- momento angolare di un rotore: {pl['momento_angolare_rotore_Nms']:.2e} N·m·s; residuo di una coppia "
-              f"controrotante con pale di densità diversa: {pl['residuo_coppia_Nms']['p95']:.1e} N·m·s al 95 %, "
-              f"{pl['residuo_coppia_Nms']['peggiore']:.1e} N·m·s nel caso peggiore (va alle ruote di reazione)."]
     L += ["", "## Spazio massimo e tempo minimo (spinta massima, da fermo a fermo)", "",
           f"| asse | spinta [N] | spazio in {ma['tempo_manovra_s']:g} s [m] | con disturbo [m] "
           "| tempo minimo [s] | con disturbo [s] | disturbo / spinta |",
@@ -270,6 +283,127 @@ def scrivi_risultato(riep, cfg, nome_caso, file_scritti, percorso):
           f"reazione dei rotori {rw['coppia_reazione']:.2e} N·m; momento dei rotori in avvio {rw['H_rotori']:.2e} N·m·s", "",
           "## File", ""]
     L += [f"- `{p}`" for p in file_scritti]
+    L.append("")
+    with open(percorso, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(L))
+    return percorso
+
+
+# ---------------------------------------------------------------- livello del caso: Pale/ e CONFRONTO.md
+def scrivi_pale(pale, cfg, cartella, formati):
+    """Cartella Pale/: grafico, pale.json e PALE.md.  Lo squilibrio non dipende dall'ambiente: si scrive una volta."""
+    os.makedirs(cartella, exist_ok=True)
+    grafico_pale(pale, cfg, os.path.join(cartella, "pale"), formati)
+    with open(os.path.join(cartella, "pale.json"), "w", encoding="utf-8") as fh:
+        json.dump({k: v for k, v in pale.items() if k != "U_campioni_g_mm"}, fh, indent=2, ensure_ascii=False, default=float)
+    pa, pl = cfg["PALE"], pale
+    pg, pm = pl["caso_peggiore"], pl["monte_carlo"]
+    L = ["# Pale: squilibrio dei rotori", "",
+         "Calcolo unico per tutti gli ambienti (geometria e giri di progetto); la quota sulla spinta massima è riferita alla "
+         "spinta di progetto.", "",
+         f"{pa['numero_pale']} pale per rotore, ognuna un parallelepipedo {pa['lunghezza_mm']:g} x {pa['larghezza_mm']:g} x "
+         f"{pa['spessore_mm']:g} mm (lunghezza x larghezza x spessore) dal mozzo di raggio {pa['raggio_mozzo_mm']:g} mm; "
+         f"densità di ogni pala a caso tra {pa['densita_min_kg_m3']:g} e {pa['densita_max_kg_m3']:g} kg/m³, "
+         f"quindi massa tra {pl['massa_pala_g']['min']:.3f} e {pl['massa_pala_g']['max']:.3f} g. "
+         f"Giri di progetto {pa['giri_progetto_rpm']:g} giri/min ({pl['frequenza_Hz']:.0f} Hz).", "",
+         "| grandezza (una ventola) | media | 95 % | caso peggiore |", "|---|---|---|---|"]
+    for k, nome, fmt in (("squilibrio_g_mm", "squilibrio [g·mm]", "{:.3f}"), ("forza_N", "forza rotante [N]", "{:.2f}"),
+                         ("accelerazione_cubo_g", "accelerazione del cubo [g]", "{:.3f}"),
+                         ("spostamento_cubo_um", "oscillazione del cubo [µm]", "{:.3f}"),
+                         ("velocita_cubo_mm_s", "velocità di vibrazione del cubo [mm/s]", "{:.3f}")):
+        L.append(f"| {nome} | {fmt.format(pm[k]['media'])} | {fmt.format(pm[k]['p95'])} | {fmt.format(pg[k])} |")
+    L += ["",
+          f"Nel caso peggiore la forza di una ventola è il **{pl['forza_peggiore_su_spinta']:.0%} della spinta massima**, "
+          f"ma gira a {pl['frequenza_Hz']:.0f} Hz e il cubo si sposta solo di {pg['spostamento_cubo_um']:.3f} µm "
+          f"({pl['spostamento_peggiore_su_un_asse_um']:.3f} µm con {pl['ventole_fuori_asse']} ventole in fase): "
+          "sulla traiettoria non pesa. Pesa sulle vibrazioni (cuscinetti, struttura, sensori inerziali): i rotori vanno equilibrati.",
+          f"- momento angolare di un rotore: {pl['momento_angolare_rotore_Nms']:.2e} N·m·s; residuo di una coppia "
+          f"controrotante con pale di densità diversa: {pl['residuo_coppia_Nms']['p95']:.1e} N·m·s al 95 %, "
+          f"{pl['residuo_coppia_Nms']['peggiore']:.1e} N·m·s nel caso peggiore (va alle ruote di reazione).", "",
+          "File: `pale.svg`, `pale.json`.", ""]
+    percorso = os.path.join(cartella, "PALE.md")
+    with open(percorso, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(L))
+    return percorso
+
+
+def scrivi_confronto(riepiloghi, cfgs, nome_caso, data, dimensionamento, percorso):
+    """CONFRONTO.md: tabella affiancata degli ambienti con le grandezze principali."""
+    nomi = list(riepiloghi)
+
+    def peggiore(r, k):
+        return max(abs(x[k]) for x in r["assi"].values())
+
+    def mc_pot(r, k, fmt):
+        if not r["monte_carlo"]:
+            return "—"
+        s = r["monte_carlo"]["potenza_totale"][k]
+        return " / ".join(fmt.format(s[c]) for c in ("media", "p95", "max"))
+
+    def mc_err(r):
+        if not r["monte_carlo"]:
+            return "—"
+        return f"{max(a['statistiche']['errore_a_T_mm']['p95'] for a in r['monte_carlo']['assi'].values()):.2f}"
+
+    def mc_quota(r):
+        return f"{r['monte_carlo']['quota_tutti_assestati']:.0%}" if r["monte_carlo"] else "—"
+
+    def sezione(titolo):
+        return (f"**{titolo}**",) + ("",) * len(nomi)
+
+    c0, r0 = cfgs[nomi[0]], riepiloghi[nomi[0]]
+    righe = [
+        sezione("Ambiente"),
+        ("pressione [Pa]", lambda r: f"{r['ambiente']['pressione_Pa']:g}"),
+        ("sigma = pressione / pressione di progetto", lambda r: f"{r['ambiente']['sigma']:.4f}"),
+        ("spinta massima per asse X / Y / Z, verso + [N] (progetto x sigma)",
+         lambda r: " / ".join(f"{f:.3f}" for f in r["spinta_max_N"]["positiva"])),
+        ("spinta massima per asse X / Y / Z, verso − [N]",
+         lambda r: " / ".join(f"{f:.3f}" for f in r["spinta_max_N"]["negativa"])),
+        ("fattore di potenza 1 / sqrt(sigma)", lambda r: f"{r['ambiente']['fattore_potenza']:.4f}"),
+        sezione("Disturbo e finestra"),
+        ("bias [g]", lambda r: f"{r['disturbo']['bias_g']:g}"),
+        (f"rumore, sigma [g] (banda {c0['DISTURBO']['rumore_banda_Hz']:g} Hz)", lambda r: f"{r['disturbo']['rumore_sigma_g']:g}"),
+        ("velocità iniziale [m/s]", lambda r: f"{r['disturbo']['velocita_iniziale_m_s']:g}"),
+        (f"finestra simulata [s] (manovra {r0['tempo_manovra_s']:g} s)", lambda r: f"{r['finestra_s']:g}"),
+        sezione("Caso peggiore (valore peggiore dei tre assi)"),
+        ("errore a fine manovra [mm]", lambda r: f"{peggiore(r, 'errore_a_T_mm'):.2f}"),
+        ("errore massimo [mm]", lambda r: f"{peggiore(r, 'errore_max_mm'):.2f}"),
+        ("spinta massima usata [N]", lambda r: f"{peggiore(r, 'spinta_max_usata_N'):.3f}"),
+        ("quota della spinta massima", lambda r: f"{peggiore(r, 'spinta_su_massima'):.0%}"),
+        ("tempo in saturazione [s]", lambda r: f"{peggiore(r, 'tempo_in_saturazione_s'):.2f}"),
+        sezione("Monte Carlo"),
+        ("errore a fine manovra, 95° percentile [mm] (asse peggiore)", mc_err),
+        ("manovre assestate su tutti gli assi", mc_quota),
+        sezione("Potenza elettrica totale (3 assi), caso peggiore"),
+        ("potenza di picco [W]", lambda r: f"{r['potenza_totale']['potenza_picco_W']:.2f}"),
+        ("energia nella finestra [J]", lambda r: f"{r['potenza_totale']['energia_J']:.1f}"),
+        ("potenza media [W]", lambda r: f"{r['potenza_totale']['potenza_media_W']:.2f}"),
+        ("corrente di picco [A]", lambda r: f"{r['potenza_totale']['corrente_picco_A']:.3f}"),
+        sezione("Potenza elettrica totale, Monte Carlo (media / 95° / massimo)"),
+        ("potenza di picco [W]", lambda r: mc_pot(r, "potenza_picco_W", "{:.2f}")),
+        ("energia nella finestra [J]", lambda r: mc_pot(r, "energia_J", "{:.1f}")),
+        ("corrente di picco [A]", lambda r: mc_pot(r, "corrente_picco_A", "{:.3f}")),
+        sezione("Anello di controllo"),
+        ("margine di fase [°] (non dipende dall'ambiente)", lambda r: f"{r['margine_fase_anello']['margine_gradi']:.1f}"),
+    ]
+    L = [f"# Confronto tra gli ambienti, caso `{nome_caso}`", "",
+         f"Run del {data}. Un ambiente per colonna; i dettagli sono in `<ambiente>/00_sintesi/RISULTATO.md`.", "",
+         f"Spinta massima e potenza seguono la pressione: sigma = pressione / {c0['ATTUATORE']['pressione_progetto_Pa']:g} Pa; "
+         "spinta massima = spinta di progetto x sigma; potenza per una spinta F = P_rif (F / F_rif)^esponente / sqrt(sigma). "
+         f"Batteria {c0['ENERGIA']['tensione_batteria_V']:g} V. Squilibrio delle pale (uguale per tutti): `Pale/PALE.md`.", "",
+         "| grandezza | " + " | ".join(nomi) + " |", "|---|" + "---|" * len(nomi)]
+    for r in righe:
+        if not callable(r[1]):                            # riga di sezione
+            L.append("| " + " | ".join(r) + " |")
+        else:
+            L.append(f"| {r[0]} | " + " | ".join(r[1](riepiloghi[n]) for n in nomi) + " |")
+    if dimensionamento["caso"]:
+        L += ["", f"Controllo contro il dimensionamento (caso `{dimensionamento['caso']}`): "
+              + ("dati coerenti." if not dimensionamento["avvisi"] else "")]
+        L += [f"- ATTENZIONE: {a}" for a in dimensionamento["avvisi"]]
+    else:
+        L += ["", "Controllo contro il dimensionamento: nessun caso trovato."]
     L.append("")
     with open(percorso, "w", encoding="utf-8") as fh:
         fh.write("\n".join(L))

@@ -14,8 +14,19 @@ L'integrale si ferma quando il comando satura (anti-windup per integrazione cond
 Disturbo del volo parabolico (riferimento del cubo): bias costante + rumore gaussiano a media nulla limitato
 in banda + sinusoide facoltativa; il cubo parte con una velocità iniziale v0 (rilascio imperfetto).
 
-Riferimento: spostamento da fermo a fermo di d in un tempo T con profilo a minimo jerk (polinomio di quinto grado).
+Riferimento: spostamento da fermo a fermo di d in un tempo T con profilo a minimo jerk (polinomio di quinto grado),
+a gradino oppure bang-bang (accelerazione 4 d / T^2 per T/2, poi l'opposta: il profilo del dimensionamento).
 simula_asse accetta anche N disturbi e N velocità iniziali insieme (Monte Carlo vettorizzato).
+
+Ambiente (pressione dell'aria): i dati dell'attuatore sono quelli di progetto, alla pressione di progetto p0.
+Con sigma = p / p0 (stessa temperatura, ventole a geometria e giri fissati, leggi di similitudine):
+
+    spinta massima dell'ambiente   F_max = F_max,progetto x sigma             (stessi giri massimi)
+    potenza per una spinta F       P = P_rif (F / F_rif)^esponente / sqrt(sigma)
+                                   (la stessa spinta in aria meno densa chiede più giri)
+
+sigma = 1 riproduce esattamente gli indicatori di progetto.  La potenza totale è la somma dei tre assi,
+la corrente di picco è la potenza totale di picco divisa per la tensione della batteria.
 
 Solo numpy.  Unità SI (m, s, kg, N, rad/s) salvo diversa indicazione.
 """
@@ -39,6 +50,22 @@ def riferimento_minjerk(t, d, T):
 def riferimento_gradino(t, d, T=0.0):
     t = np.asarray(t, float)
     return np.full_like(t, d), np.zeros_like(t), np.zeros_like(t)
+
+
+def riferimento_bang_bang(t, d, T):
+    """Da fermo a fermo in T con accelerazione 4 d / T^2 per T/2 e l'opposta per T/2; poi fermo in d."""
+    t = np.asarray(t, float)
+    a0 = 4.0 * d / T ** 2
+    prima = t < T / 2
+    dopo = (t >= T / 2) & (t < T)
+    x = np.where(prima, 0.5 * a0 * t ** 2,
+                 np.where(dopo, d - 0.5 * a0 * (T - t) ** 2, d))
+    v = np.where(prima, a0 * t, np.where(dopo, a0 * (T - t), 0.0))
+    a = np.where(prima, a0, np.where(dopo, -a0, 0.0))
+    return x, v, a
+
+
+PROFILI = {"minimo_jerk": riferimento_minjerk, "gradino": riferimento_gradino, "bang_bang": riferimento_bang_bang}
 
 
 def disturbo_sinusoidale(t, ampiezza_g, frequenza_Hz, fase_deg):
@@ -133,7 +160,29 @@ def campione(s, j):
 
 
 # ---------------------------------------------------------------- indicatori
-def indicatori(s, d, T, tolleranza_m, F_max, P_rif_W, F_rif_N, esponente, dt):
+def spinta_ambiente(F_progetto, sigma):
+    """Spinta massima nell'ambiente: F_progetto x sigma (stessi giri massimi)."""
+    return np.asarray(F_progetto, float) * sigma
+
+
+def potenza_elettrica(F, P_rif_W, F_rif_N, esponente, sigma=1.0):
+    """Potenza elettrica per erogare la spinta F: P_rif (|F| / F_rif)^esponente / sqrt(sigma)."""
+    return P_rif_W * (np.abs(F) / max(F_rif_N, 1e-12)) ** esponente / math.sqrt(sigma)
+
+
+def potenza_totale(P_assi, t, tensione_V):
+    """Somma dei tre assi nel tempo e suoi indicatori (array: forma (n,) o (N, n)).
+
+    Ritorna P_tot e, sull'ultimo asse (tempo): picco, energia, media (energia / durata), corrente di picco.
+    """
+    P = np.sum(np.asarray(P_assi, float), axis=0)
+    E = np.trapezoid(P, t, axis=-1)
+    pic = np.max(P, axis=-1)
+    return {"P_tot": P, "potenza_picco_W": pic, "energia_J": E,
+            "potenza_media_W": E / (t[-1] - t[0]), "corrente_picco_A": pic / tensione_V}
+
+
+def indicatori(s, d, T, tolleranza_m, F_max, P_rif_W, F_rif_N, esponente, dt, sigma=1.0):
     t, x, e = s["t"], s["x"], s["x_rif"] - s["x"]
     i_T = int(np.searchsorted(t, T))
     i_T = min(i_T, len(t) - 1)
@@ -141,7 +190,7 @@ def indicatori(s, d, T, tolleranza_m, F_max, P_rif_W, F_rif_N, esponente, dt):
     t_ass = float(t[fuori[-1]]) if len(fuori) else 0.0
     t_ass = None if (len(fuori) and fuori[-1] == len(t) - 1) else t_ass
     sov = float(max(np.max(x) - d, 0.0)) if d >= 0 else float(max(d - np.min(x), 0.0))
-    P = P_rif_W * (np.abs(s["F"]) / max(F_rif_N, 1e-12)) ** esponente
+    P = potenza_elettrica(s["F"], P_rif_W, F_rif_N, esponente, sigma)
     return {
         "errore_a_T_mm": float(e[i_T] * 1000),
         "errore_max_mm": float(np.max(np.abs(e)) * 1000),

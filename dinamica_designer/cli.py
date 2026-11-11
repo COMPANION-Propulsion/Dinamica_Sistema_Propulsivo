@@ -1,7 +1,9 @@
 """Riga di comando della dinamica di volo: input.py -> risultati/<caso>/.
 
-Sequenza: lettura e controllo dell'input, verifiche contro soluzioni analitiche, simulazione dei
-tre assi, spazio massimo e tempo minimo, margine di fase e ruote (propulsore.py), file di uscita.
+Sequenza: lettura e controllo dell'input, verifiche contro soluzioni analitiche (una volta), analisi delle
+pale (una volta), margine di fase (una volta); poi, per ogni ambiente attivo di AMBIENTI, simulazione dei tre
+assi, Monte Carlo, potenza totale, spazio massimo e tempo minimo, ruote (propulsore.py) e file di uscita in
+risultati/<caso>/<ambiente>/; infine CONFRONTO.md.
 """
 import argparse
 import datetime as dt
@@ -16,7 +18,7 @@ import time
 import numpy as np
 
 from . import caso as CA
-from . import confronto_analisi as CF
+from . import confronto_dimensionamento as CF
 from . import export as EX
 from . import pale as PA
 from . import propulsore as DY
@@ -26,6 +28,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))    # cartella
 INPUT_FILE = os.path.join(ROOT, "input.py")
 ASSI = "XYZ"
 SEZIONI = ("ESECUZIONE", "CORPO", "ATTUATORE", "MANOVRA", "DISTURBO", "REGOLATORE", "ENERGIA", "RUOTE", "PALE")
+# sezioni che un ambiente può sovrascrivere (le chiavi dell'ambiente si fondono sulla sezione di base)
+SEZ_AMBIENTE = ("CORPO", "ATTUATORE", "MANOVRA", "DISTURBO", "REGOLATORE", "ENERGIA", "RUOTE")
+PROFILI = tuple(VO.PROFILI)
 # chiavi di ESECUZIONE che non cambiano i risultati: fuori dall'impronta
 SOLO_FORMA = ("etichetta", "cartella_output", "formato_grafici", "verifiche")
 CHIAVI_DISTURBO = ("bias_g", "rumore_sigma_g", "rumore_banda_Hz", "velocita_iniziale_m_s", "sinusoide_ampiezza_g",
@@ -33,6 +38,8 @@ CHIAVI_DISTURBO = ("bias_g", "rumore_sigma_g", "rumore_banda_Hz", "velocita_iniz
 # indicatori riassunti nel Monte Carlo (sui valori assoluti): media, 95° percentile, massimo
 STAT_MC = ("errore_a_T_mm", "errore_finale_mm", "errore_max_mm", "sovraelongazione_mm", "spinta_su_massima",
            "tempo_in_saturazione_s", "energia_J")
+# indicatori della potenza totale (somma dei tre assi)
+STAT_POTENZA = ("potenza_picco_W", "energia_J", "potenza_media_W", "corrente_picco_A")
 
 
 # ---------------------------------------------------------------- input
@@ -43,11 +50,79 @@ def carica_input(percorso):
     spec.loader.exec_module(mod)
     cfg = {k: dict(getattr(mod, k)) for k in SEZIONI}
     cfg["CASO"] = {**CA.CASO_PREDEFINITO, **dict(getattr(mod, "CASO", None) or {})}
+    amb = getattr(mod, "AMBIENTI", None)
+    if not amb:
+        raise ValueError("manca la sezione AMBIENTI in input.py (un ambiente per soluzione, vedi input.py)")
+    cfg["AMBIENTI"] = {str(k): dict(v) for k, v in dict(amb).items()}
     _controlla(cfg)
     return cfg
 
 
+def ambienti_attivi(cfg):
+    return [n for n, a in cfg["AMBIENTI"].items() if a.get("attivo", True)]
+
+
+def cfg_ambiente(cfg, nome):
+    """Input di un ambiente: sezioni di base con le sovrascritture dell'ambiente, spinta massima x sigma.
+
+    Aggiunge cfg["AMBIENTE"] con nome, pressione, sigma = pressione / pressione di progetto, fattore di
+    potenza 1 / sqrt(sigma) e spinta massima di progetto.
+    """
+    a = cfg["AMBIENTI"][nome]
+    c = {k: (dict(v) if isinstance(v, dict) else v) for k, v in cfg.items() if k != "AMBIENTI"}
+    for sez in SEZ_AMBIENTE:
+        c[sez].update(a.get(sez, {}))
+    at = c["ATTUATORE"]
+    sigma = a["pressione_Pa"] / at["pressione_progetto_Pa"]
+    c["AMBIENTE"] = {"nome": nome, "pressione_Pa": a["pressione_Pa"], "sigma": sigma,
+                     "fattore_potenza": 1.0 / math.sqrt(sigma),
+                     "spinta_max_progetto_N": [float(f) for f in at["spinta_max_positiva_N"]]}
+    for k in ("spinta_max_positiva_N", "spinta_max_negativa_N"):
+        at[k] = [float(f) for f in VO.spinta_ambiente(at[k], sigma)]
+    return c
+
+
+def _controlla_ambienti(c):
+    """Struttura di AMBIENTI e chiavi nuove di ATTUATORE ed ENERGIA; ritorna l'elenco degli errori."""
+    err = []
+    if "pressione_progetto_Pa" not in c["ATTUATORE"]:
+        err.append("manca ATTUATORE['pressione_progetto_Pa']")
+    if "tensione_batteria_V" not in c["ENERGIA"]:
+        err.append("manca ENERGIA['tensione_batteria_V']")
+    if err:
+        return err
+    if c["ATTUATORE"]["pressione_progetto_Pa"] <= 0 or c["ENERGIA"]["tensione_batteria_V"] <= 0:
+        err.append("ATTUATORE['pressione_progetto_Pa'] ed ENERGIA['tensione_batteria_V'] devono essere maggiori di zero")
+    for n, a in c["AMBIENTI"].items():
+        if not n or n == "Pale" or any(ch in n for ch in '<>:"/|?*' + chr(92)):
+            err.append(f"AMBIENTI: nome '{n}' non valido come cartella ('Pale' è riservato)")
+        if "pressione_Pa" not in a or not a["pressione_Pa"] > 0:
+            err.append(f"AMBIENTI['{n}']['pressione_Pa'] mancante o non positiva")
+        ignote = sorted(set(a) - {"attivo", "pressione_Pa"} - set(SEZ_AMBIENTE))
+        if ignote:
+            err.append(f"AMBIENTI['{n}']: chiavi sconosciute {', '.join(ignote)} (ammesse: attivo, pressione_Pa, "
+                       f"{', '.join(SEZ_AMBIENTE)})")
+    if not ambienti_attivi(c):
+        err.append("AMBIENTI: nessun ambiente attivo")
+    return err
+
+
 def _controlla(c):
+    err = _controlla_ambienti(c)
+    if not err:
+        for cx in [c] + [cfg_ambiente(c, n) for n in ambienti_attivi(c)]:
+            for e in _controlla_sezioni(cx):
+                if e not in err:
+                    err.append(e)
+    unknown = sorted(set(c["CASO"]) - set(CA.CASO_PREDEFINITO))
+    if unknown:
+        err.append(f"chiavi sconosciute in CASO: {', '.join(unknown)}")
+    if err:
+        raise ValueError("Errori in input:" + chr(10) + " - " + (chr(10) + " - ").join(err))
+
+
+def _controlla_sezioni(c):
+    """Controlli sulle sezioni (di base o già fuse con un ambiente); ritorna l'elenco degli errori."""
     err = []
     di = c["DISTURBO"]
     if "ampiezza_g" in di:
@@ -84,8 +159,8 @@ def _controlla(c):
         err.append("REGOLATORE['polo_integrale_su_wn'] non può essere negativo")
     if c["CORPO"]["massa_kg"] <= 0:
         err.append("massa_kg deve essere maggiore di zero")
-    if c["MANOVRA"]["profilo"] not in ("minimo_jerk", "gradino"):
-        err.append("MANOVRA['profilo'] deve essere 'minimo_jerk' o 'gradino'")
+    if c["MANOVRA"]["profilo"] not in PROFILI:
+        err.append("MANOVRA['profilo'] deve essere " + " oppure ".join(f"'{p}'" for p in PROFILI))
     if c["MANOVRA"]["tempo_manovra_s"] <= 0 or c["MANOVRA"]["finestra_s"] < c["MANOVRA"]["tempo_manovra_s"]:
         err.append("serve 0 < tempo_manovra_s <= finestra_s")
     if c["ATTUATORE"]["tempo_salita_90_s"] <= 0:
@@ -93,16 +168,14 @@ def _controlla(c):
     elif c["ESECUZIONE"]["passo_integrazione_s"] > c["ATTUATORE"]["tempo_salita_90_s"] / 2.3 / 2:
         err.append("passo_integrazione_s troppo grande rispetto al ritardo dell'attuatore (t90 / 2,3): "
                    "l'integrazione diventerebbe instabile; usa un passo <= t90 / 4,6")
-    unknown = sorted(set(c["CASO"]) - set(CA.CASO_PREDEFINITO))
-    if unknown:
-        err.append(f"chiavi sconosciute in CASO: {', '.join(unknown)}")
-    if err:
-        raise ValueError("Errori in input:\n - " + "\n - ".join(err))
+    return err
 
 
 def impronta(cfg):
     """Hash breve dei dati che cambiano i risultati: stessa impronta = stessi risultati."""
-    dati = {k: v for k, v in cfg.items() if k != "CASO"}
+    dati = {k: v for k, v in cfg.items() if k not in ("CASO", "AMBIENTI")}
+    dati["AMBIENTI"] = {n: {k: v for k, v in a.items() if k != "attivo"} for n, a in cfg["AMBIENTI"].items()
+                        if a.get("attivo", True)}
     dati["ESECUZIONE"] = {k: v for k, v in cfg["ESECUZIONE"].items() if k not in SOLO_FORMA}
     return hashlib.sha1(json.dumps(dati, sort_keys=True, default=str).encode()).hexdigest()[:8]
 
@@ -113,10 +186,11 @@ def nome_automatico(cfg, imp):
 
 
 # ---------------------------------------------------------------- calcolo
+# cfg qui sotto è l'input di un ambiente (cfg_ambiente): spinta massima già moltiplicata per sigma
 def _simula_asse(cfg, i, a_dist, v0):
     m = cfg["CORPO"]["massa_kg"]
     at, ma, rg = cfg["ATTUATORE"], cfg["MANOVRA"], cfg["REGOLATORE"]
-    rif = VO.riferimento_minjerk if ma["profilo"] == "minimo_jerk" else VO.riferimento_gradino
+    rif = VO.PROFILI[ma["profilo"]]
     return VO.simula_asse(
         m, at["spinta_max_positiva_N"][i], at["tempo_salita_90_s"], rg["frequenza_propria_rad_s"],
         rg["smorzamento"], ma["distanza_m"][i], ma["tempo_manovra_s"], a_dist, ma["finestra_s"],
@@ -124,12 +198,18 @@ def _simula_asse(cfg, i, a_dist, v0):
         F_max_neg=at["spinta_max_negativa_N"][i], v0=v0, alfa_integrale=rg.get("polo_integrale_su_wn", 0.0))
 
 
+def _potenza(cfg, F):
+    """Potenza elettrica di un asse nell'ambiente (vedi VO.potenza_elettrica)."""
+    en = cfg["ENERGIA"]
+    return VO.potenza_elettrica(F, en["potenza_rif_W"], en["spinta_rif_N"], en["esponente"], cfg["AMBIENTE"]["sigma"])
+
+
 def _indicatori(cfg, i, s):
     at, ma, en = cfg["ATTUATORE"], cfg["MANOVRA"], cfg["ENERGIA"]
     F_max = max(at["spinta_max_positiva_N"][i], at["spinta_max_negativa_N"][i])
     return VO.indicatori(s, ma["distanza_m"][i], ma["tempo_manovra_s"], ma["tolleranza_posizione_mm"] / 1000,
                          F_max, en["potenza_rif_W"], en["spinta_rif_N"], en["esponente"],
-                         cfg["ESECUZIONE"]["passo_integrazione_s"])
+                         cfg["ESECUZIONE"]["passo_integrazione_s"], cfg["AMBIENTE"]["sigma"])
 
 
 def simula(cfg):
@@ -150,11 +230,22 @@ def simula(cfg):
     return serie, ind
 
 
+def potenza_caso_peggiore(cfg, serie):
+    """Potenza elettrica totale (somma dei tre assi) nel caso peggiore.
+
+    Ritorna (indicatori scalari, potenza dei tre assi, potenza totale) con le curve come array.
+    """
+    P_assi = [_potenza(cfg, s["F"]) for s in serie]
+    r = VO.potenza_totale(P_assi, serie[0]["t"], cfg["ENERGIA"]["tensione_batteria_V"])
+    P_tot = r.pop("P_tot")
+    return {k: float(v) for k, v in r.items()}, P_assi, P_tot
+
+
 def monte_carlo(cfg):
     """Campioni casuali del disturbo: bias e v0 in direzione casuale, rumore in banda, fasi casuali.
 
     Ritorna None se campioni_monte_carlo = 0; altrimenti un dizionario con le statistiche per asse (JSON),
-    gli inviluppi dell'errore ("inviluppo", array) e una riga per campione ("righe").
+    quelle della potenza totale, gli inviluppi dell'errore ("inviluppo", array) e una riga per campione ("righe").
     """
     di, ma = cfg["DISTURBO"], cfg["MANOVRA"]
     N = di["campioni_monte_carlo"]
@@ -168,7 +259,7 @@ def monte_carlo(cfg):
     fasi = rng.uniform(0.0, 2 * math.pi, (N, 3))
     tol = ma["tolleranza_posizione_mm"]
     passo = max(1, int(round(0.01 / dt)))
-    assi, inv, ind_tutti = {}, {"t": t[::passo]}, []
+    assi, inv, ind_tutti, P_assi = {}, {"t": t[::passo]}, [], []
     for i in range(3):
         rum = VO.rumore_in_banda(n, dt, di["rumore_sigma_g"] * VO.G0, di["rumore_banda_Hz"], rng, N)
         ad = (di["bias_g"] * VO.G0 * u_bias[:, i:i + 1] + rum + di["sinusoide_ampiezza_g"][i] * VO.G0
@@ -176,6 +267,7 @@ def monte_carlo(cfg):
         s = _simula_asse(cfg, i, ad, di["velocita_iniziale_m_s"] * u_v0[:, i])
         ind = [_indicatori(cfg, i, VO.campione(s, j)) for j in range(N)]
         ind_tutti.append(ind)
+        P_assi.append(_potenza(cfg, s["F"]))
         e = (s["x_rif"] - s["x"])[:, ::passo] * 1000
         inv[ASSI[i]] = {"p5": np.percentile(e, 5, axis=0), "p50": np.percentile(e, 50, axis=0),
                         "p95": np.percentile(e, 95, axis=0), "min": e.min(axis=0), "max": e.max(axis=0),
@@ -192,6 +284,10 @@ def monte_carlo(cfg):
         assi[ASSI[i]] = {"statistiche": stat, "quota_assestati": float(np.isfinite(t_ass).mean()),
                          "quota_in_tolleranza_a_T": float(np.mean([abs(x["errore_a_T_mm"]) <= tol for x in ind]))}
         del s, rum, ad
+    tot = VO.potenza_totale(P_assi, t, cfg["ENERGIA"]["tensione_batteria_V"])
+    del P_assi
+    potenza = {k: {"media": float(tot[k].mean()), "p95": float(np.percentile(tot[k], 95)), "max": float(tot[k].max())}
+               for k in STAT_POTENZA}
     tutti = np.array([[ind_tutti[i][j]["tempo_assestamento_s"] is not None for i in range(3)] for j in range(N)])
     righe = []
     for j in range(N):
@@ -201,9 +297,11 @@ def monte_carlo(cfg):
             x = ind_tutti[i][j]
             r.update({f"errore_a_T_{a}_mm": x["errore_a_T_mm"], f"errore_finale_{a}_mm": x["errore_finale_mm"],
                       f"assestamento_{a}_s": x["tempo_assestamento_s"], f"energia_{a}_J": x["energia_J"]})
+        r.update({"potenza_picco_totale_W": float(tot["potenza_picco_W"][j]), "energia_totale_J": float(tot["energia_J"][j]),
+                  "corrente_picco_A": float(tot["corrente_picco_A"][j])})
         righe.append(r)
     return {"campioni": N, "seme": di["seme"], "assi": assi, "quota_tutti_assestati": float(tutti.all(axis=1).mean()),
-            "inviluppo": inv, "righe": righe}
+            "potenza_totale": potenza, "inviluppo": inv, "righe": righe}
 
 
 def spazio_e_tempo(cfg):
@@ -222,17 +320,97 @@ def spazio_e_tempo(cfg):
     return spazio
 
 
-def attuatore_e_ruote(cfg):
-    """Margine di fase (anello simulato e PD di riferimento alle bande richieste) e bilancio delle ruote."""
-    at, ma, ru, rg = cfg["ATTUATORE"], cfg["MANOVRA"], cfg["RUOTE"], cfg["REGOLATORE"]
+def margine_fase(cfg):
+    """Margine di fase (anello simulato e PD di riferimento alle bande richieste): non dipende dall'ambiente."""
+    at, ru, rg = cfg["ATTUATORE"], cfg["RUOTE"], cfg["REGOLATORE"]
     pm = {wc: DY.margine_fase(at["tempo_salita_90_s"], wc) for wc in ru["frequenze_margine_fase_rad_s"]}
     kp, kd, ki = VO.guadagni(rg["frequenza_propria_rad_s"], rg["smorzamento"], rg.get("polo_integrale_su_wn", 0.0))
     wc, pma = DY.margine_fase_anello(kp, kd, ki, at["tempo_salita_90_s"] / 2.3)
-    anello = {"pulsazione_taglio_rad_s": wc, "margine_gradi": pma}
-    rw = DY.bilancio_ruote(cfg["ENERGIA"]["spinta_rif_N"], ru["scostamento_baricentro_mm"] / 1000, ru["braccio_coppia_m"],
-                           ru["squilibrio_coppia"], ru["spinta_per_unita_N"], ru["coppia_reazione_rotori_Nm"],
-                           ru["momento_rotori_in_avvio_Nms"], ma["finestra_s"], ru["momento_ruote_max_Nms"])
-    return pm, rw, anello
+    return pm, {"pulsazione_taglio_rad_s": wc, "margine_gradi": pma}
+
+
+def ruote(cfg):
+    """Bilancio del momento angolare delle ruote di reazione nella finestra dell'ambiente."""
+    ma, ru = cfg["MANOVRA"], cfg["RUOTE"]
+    return DY.bilancio_ruote(cfg["ENERGIA"]["spinta_rif_N"], ru["scostamento_baricentro_mm"] / 1000, ru["braccio_coppia_m"],
+                             ru["squilibrio_coppia"], ru["spinta_per_unita_N"], ru["coppia_reazione_rotori_Nm"],
+                             ru["momento_rotori_in_avvio_Nms"], ma["finestra_s"], ru["momento_ruote_max_Nms"])
+
+
+# ---------------------------------------------------------------- un ambiente
+def esegui_ambiente(cfg, cart, nome_caso, imp, data, pm, anello, log):
+    """Simula e scrive la soluzione di un ambiente in cart (già preparata); ritorna il riepilogo (dizionario)."""
+    amb, ma, at, di = cfg["AMBIENTE"], cfg["MANOVRA"], cfg["ATTUATORE"], cfg["DISTURBO"]
+    en, es = cfg["ENERGIA"], cfg["ESECUZIONE"]
+    log(f"\n{'=' * 100}\nAMBIENTE {amb['nome']}: pressione {amb['pressione_Pa']:g} Pa, sigma = {amb['sigma']:.4f}")
+    log(f"  spinta massima {at['spinta_max_positiva_N']} N (+), {at['spinta_max_negativa_N']} N (-) "
+        f"(progetto {amb['spinta_max_progetto_N']} N x sigma); fattore di potenza 1/sqrt(sigma) = {amb['fattore_potenza']:.4f}")
+    log(f"  manovra {ma['distanza_m']} m in {ma['tempo_manovra_s']} s (profilo {ma['profilo']}), finestra {ma['finestra_s']} s")
+    log(f"  disturbo: {EX.descrivi_disturbo(di)}")
+    serie, ind = simula(cfg)
+    pot, P_assi, P_tot = potenza_caso_peggiore(cfg, serie)
+    mc = monte_carlo(cfg)
+    spazio = spazio_e_tempo(cfg)
+    rw = ruote(cfg)
+
+    log("\nRISULTATI PER ASSE, CASO PEGGIORE (bias e v0 col modulo pieno su ogni asse, contro il moto)")
+    log(f"  {'asse':<5}{'err a T':>10}{'err max':>10}{'sovra':>9}{'assest.':>10}{'F max':>9}{'F/Fmax':>8}{'sat.':>7}{'energia':>10}")
+    for i, x in enumerate(ind):
+        ass = f"{x['tempo_assestamento_s']:.2f} s" if x["tempo_assestamento_s"] is not None else "oltre"
+        log(f"  {ASSI[i]:<5}{x['errore_a_T_mm']:>8.1f}mm{x['errore_max_mm']:>8.1f}mm{x['sovraelongazione_mm']:>7.1f}mm"
+            f"{ass:>10}{x['spinta_max_usata_N']:>7.2f} N{x['spinta_su_massima']:>8.0%}{x['tempo_in_saturazione_s']:>5.2f} s"
+            f"{x['energia_J']:>8.1f} J")
+    log(f"  POTENZA TOTALE (3 assi, {en['tensione_batteria_V']:g} V): picco {pot['potenza_picco_W']:.2f} W, energia "
+        f"{pot['energia_J']:.1f} J, media {pot['potenza_media_W']:.2f} W, corrente di picco {pot['corrente_picco_A']:.3f} A")
+    if mc:
+        log(f"\nMONTE CARLO ({mc['campioni']} campioni, seme {mc['seme']}): |errore| media / 95° percentile / massimo")
+        for a, x in mc["assi"].items():
+            st = x["statistiche"]
+            log(f"  {a}: a fine manovra {st['errore_a_T_mm']['media']:.2f} / {st['errore_a_T_mm']['p95']:.2f} / "
+                f"{st['errore_a_T_mm']['max']:.2f} mm; a fine finestra {st['errore_finale_mm']['media']:.2f} / "
+                f"{st['errore_finale_mm']['p95']:.2f} / {st['errore_finale_mm']['max']:.2f} mm; "
+                f"assestati {x['quota_assestati']:.0%}")
+        log(f"  assestati su tutti e tre gli assi entro la finestra: {mc['quota_tutti_assestati']:.0%}")
+        pt = mc["potenza_totale"]
+        log("  potenza totale, media / 95° percentile / massimo: " + "; ".join(
+            f"{nome} {pt[k]['media']:.{d}f} / {pt[k]['p95']:.{d}f} / {pt[k]['max']:.{d}f} {u}"
+            for k, nome, u, d in (("potenza_picco_W", "picco", "W", 2), ("energia_J", "energia", "J", 1),
+                                  ("potenza_media_W", "media", "W", 2), ("corrente_picco_A", "corrente di picco", "A", 3))))
+    log("\nSPAZIO MASSIMO E TEMPO MINIMO (spinta massima dell'ambiente, da fermo a fermo)")
+    for s in spazio:
+        tmin = f"{s['tempo_min_con_disturbo_s']:.2f} s" if s["tempo_min_con_disturbo_s"] else "impossibile"
+        log(f"  asse {s['asse']}: in {ma['tempo_manovra_s']} s al massimo {s['spazio_max_senza_disturbo_m']:.3f} m "
+            f"({s['spazio_max_con_disturbo_m']:.3f} m con il disturbo nel caso peggiore); per {ma['distanza_m'][ASSI.index(s['asse'])]} m "
+            f"servono almeno {s['tempo_min_senza_disturbo_s']:.2f} s ({tmin} con disturbo); il disturbo è il "
+            f"{s['disturbo_sulla_spinta']:.1%} della spinta massima")
+    log(f"  ruote di reazione: momento in finestra {rw['H_finestra']:.3f} N·m·s = {rw['quota_ruota']:.0%} della capacità "
+        f"({cfg['RUOTE']['momento_ruote_max_Nms']} N·m·s)" + ("  -> SATURANO" if rw["quota_ruota"] > 1 else ""))
+
+    formati = es["formato_grafici"]
+    scritti = []
+    scritti += EX.grafico_moto(serie, cfg, (P_assi, P_tot), os.path.join(cart, "01_grafici", "01_moto_tre_assi"), formati)
+    scritti += EX.grafico_spazio_massimo(cfg, os.path.join(cart, "01_grafici", "02_spazio_massimo"), formati)
+    scritti.append(EX.scrivi_serie(serie, P_assi, P_tot, es["passo_integrazione_s"],
+                                   os.path.join(cart, "02_dati", "serie_temporali.csv")))
+    if mc:
+        scritti += EX.grafico_monte_carlo(mc, cfg, os.path.join(cart, "01_grafici", "03_monte_carlo"), formati)
+        scritti.append(EX.scrivi_monte_carlo(mc, os.path.join(cart, "02_dati", "monte_carlo.csv")))
+    riep = {"data": data, "impronta": imp, "ambiente": {**amb}, "massa_kg": cfg["CORPO"]["massa_kg"],
+            "disturbo": {k: di[k] for k in ("bias_g", "rumore_sigma_g", "rumore_banda_Hz", "velocita_iniziale_m_s")},
+            "finestra_s": ma["finestra_s"], "tempo_manovra_s": ma["tempo_manovra_s"],
+            "spinta_max_N": {"positiva": at["spinta_max_positiva_N"], "negativa": at["spinta_max_negativa_N"]},
+            "assi": {ASSI[i]: ind[i] for i in range(3)}, "potenza_totale": pot,
+            "monte_carlo": {k: v for k, v in mc.items() if k not in ("inviluppo", "righe")} if mc else None,
+            "spazio_massimo": spazio,
+            "margine_fase_gradi": {str(k): v for k, v in pm.items()}, "margine_fase_anello": anello,
+            "t_salita_90_s": at["tempo_salita_90_s"], "ruote": rw}
+    scritti.append(EX.scrivi_riepilogo(riep, os.path.join(cart, "00_sintesi", "riepilogo.json")))
+    rel = [os.path.relpath(p, cart).replace(os.sep, "/") for p in scritti]
+    ris = EX.scrivi_risultato(riep, cfg, nome_caso, sorted(["00_sintesi/RISULTATO.md"] + rel),
+                              os.path.join(cart, "00_sintesi", "RISULTATO.md"))
+    for p in [ris] + scritti:
+        log(f"  scritto: {amb['nome']}/{os.path.relpath(p, cart)}".replace(os.sep, "/"))
+    return riep
 
 
 # ---------------------------------------------------------------- run
@@ -254,10 +432,11 @@ def run(input_file=INPUT_FILE, nome_run="dinamica"):
             print("Una verifica è fallita: la simulazione non parte.")
             return None
     imp = impronta(cfg)
+    attivi = ambienti_attivi(cfg)
     base = os.path.join(ROOT, es.get("cartella_output", "risultati"))
     os.makedirs(base, exist_ok=True)
     nome = CA.nome_caso(cfg["CASO"], nome_automatico(cfg, imp))
-    cart = CA.prepara(base, nome, imp, cfg["CASO"]["sovrascrivi"], input_file)
+    cart = CA.prepara(base, nome, imp, cfg["CASO"]["sovrascrivi"], input_file, attivi)     # una volta sola
     flog = open(os.path.join(cart, "log.txt"), "w", encoding="utf-8")
 
     def log(msg=""):
@@ -265,59 +444,34 @@ def run(input_file=INPUT_FILE, nome_run="dinamica"):
         flog.write(msg + "\n")
         flog.flush()
 
-    m, ma, at, di, rg = cfg["CORPO"]["massa_kg"], cfg["MANOVRA"], cfg["ATTUATORE"], cfg["DISTURBO"], cfg["REGOLATORE"]
-    ru = cfg["RUOTE"]
+    m, at, rg = cfg["CORPO"]["massa_kg"], cfg["ATTUATORE"], cfg["REGOLATORE"]
+    data = f"{dt.datetime.now():%d/%m/%Y %H:%M}"
     log(f"Esecuzione {nome_run} (input: {os.path.basename(input_file)}): {cart}")
-    log(f"Massa {m:.2f} kg nel baricentro; manovra {ma['distanza_m']} m in {ma['tempo_manovra_s']} s "
-        f"(profilo {ma['profilo']}), finestra {ma['finestra_s']} s")
-    log(f"{EX.descrivi_regolatore(rg)}; attuatore t90 = {at['tempo_salita_90_s']} s")
-    log(f"Disturbo: {EX.descrivi_disturbo(di)}")
-    run_anl, avvisi_anl = CF.confronta(cfg, ROOT)
-    log(f"Dati [ANL] dell'input confrontati con la run dell'analisi {run_anl}: "
-        + ("coerenti" if not avvisi_anl else f"{len(avvisi_anl)} differenze") if run_anl else "Dati [ANL] non controllati")
-    for a in avvisi_anl:
+    log(f"Massa {m:.2f} kg nel baricentro; ambienti attivi: {', '.join(attivi)}")
+    log(f"{EX.descrivi_regolatore(rg)}; attuatore t90 = {at['tempo_salita_90_s']} s; "
+        f"dati di progetto alla pressione {at['pressione_progetto_Pa']:g} Pa")
+    run_dim, avvisi_dim = CF.confronta(cfg, ROOT)
+    log(f"Dati [DIM] dell'input confrontati con il caso del dimensionamento {run_dim}: "
+        + ("coerenti" if not avvisi_dim else f"{len(avvisi_dim)} differenze") if run_dim else "Dati [DIM] non controllati")
+    for a in avvisi_dim:
         log(f"  ATTENZIONE: {a}")
-    serie, ind = simula(cfg)
-    mc = monte_carlo(cfg)
-    pale = PA.analizza(cfg["PALE"], m, max(max(at["spinta_max_positiva_N"]), max(at["spinta_max_negativa_N"])))
-    spazio = spazio_e_tempo(cfg)
-    pm, rw, anello = attuatore_e_ruote(cfg)
 
-    log("\nRISULTATI PER ASSE, CASO PEGGIORE (bias e v0 col modulo pieno su ogni asse, contro il moto)")
-    log(f"  {'asse':<5}{'err a T':>10}{'err max':>10}{'sovra':>9}{'assest.':>10}{'F max':>9}{'F/Fmax':>8}{'sat.':>7}{'energia':>10}")
-    for i, x in enumerate(ind):
-        ass = f"{x['tempo_assestamento_s']:.2f} s" if x["tempo_assestamento_s"] is not None else "oltre"
-        log(f"  {ASSI[i]:<5}{x['errore_a_T_mm']:>8.1f}mm{x['errore_max_mm']:>8.1f}mm{x['sovraelongazione_mm']:>7.1f}mm"
-            f"{ass:>10}{x['spinta_max_usata_N']:>7.2f} N{x['spinta_su_massima']:>8.0%}{x['tempo_in_saturazione_s']:>5.2f} s"
-            f"{x['energia_J']:>8.0f} J")
-    if mc:
-        log(f"\nMONTE CARLO ({mc['campioni']} campioni, seme {mc['seme']}): |errore| media / 95° percentile / massimo")
-        for a, x in mc["assi"].items():
-            st = x["statistiche"]
-            log(f"  {a}: a fine manovra {st['errore_a_T_mm']['media']:.1f} / {st['errore_a_T_mm']['p95']:.1f} / "
-                f"{st['errore_a_T_mm']['max']:.1f} mm; a fine finestra {st['errore_finale_mm']['media']:.1f} / "
-                f"{st['errore_finale_mm']['p95']:.1f} / {st['errore_finale_mm']['max']:.1f} mm; "
-                f"assestati {x['quota_assestati']:.0%}")
-        log(f"  assestati su tutti e tre gli assi entro la finestra: {mc['quota_tutti_assestati']:.0%}")
+    # calcoli che non dipendono dall'ambiente: una volta sola
+    pale = PA.analizza(cfg["PALE"], m, max(max(at["spinta_max_positiva_N"]), max(at["spinta_max_negativa_N"])))
+    pm, anello = margine_fase(cfg)
     pa, pg, pmc = cfg["PALE"], pale["caso_peggiore"], pale["monte_carlo"]
-    log(f"\nPALE ({pa['numero_pale']} per rotore, {pa['lunghezza_mm']:g} x {pa['larghezza_mm']:g} x {pa['spessore_mm']:g} mm, "
-        f"densità {pa['densita_min_kg_m3']:g}-{pa['densita_max_kg_m3']:g} kg/m³, {pale['frequenza_Hz']:.0f} Hz ai giri di progetto)")
+    log(f"\nPALE (non dipendono dall'ambiente; {pa['numero_pale']} per rotore, {pa['lunghezza_mm']:g} x {pa['larghezza_mm']:g} x "
+        f"{pa['spessore_mm']:g} mm, densità {pa['densita_min_kg_m3']:g}-{pa['densita_max_kg_m3']:g} kg/m³, "
+        f"{pale['frequenza_Hz']:.0f} Hz ai giri di progetto)")
     log(f"  massa di una pala {pale['massa_pala_g']['min']:.3f}-{pale['massa_pala_g']['max']:.3f} g; squilibrio "
         f"{pmc['squilibrio_g_mm']['media']:.3f} g·mm in media, {pg['squilibrio_g_mm']:.3f} g·mm nel caso peggiore")
     log(f"  forza rotante di una ventola: {pmc['forza_N']['media']:.2f} N in media, {pmc['forza_N']['p95']:.2f} N al 95 %, "
-        f"{pg['forza_N']:.2f} N nel caso peggiore ({pale['forza_peggiore_su_spinta']:.0%} della spinta massima)")
+        f"{pg['forza_N']:.2f} N nel caso peggiore ({pale['forza_peggiore_su_spinta']:.0%} della spinta massima di progetto)")
     log(f"  oscillazione del cubo: {pg['spostamento_cubo_um']:.3f} µm per ventola, "
         f"{pale['spostamento_peggiore_su_un_asse_um']:.3f} µm con {pale['ventole_fuori_asse']} ventole in fase")
     log(f"  momento angolare di un rotore {pale['momento_angolare_rotore_Nms']:.2e} N·m·s; residuo di una coppia "
         f"controrotante {pale['residuo_coppia_Nms']['p95']:.1e} N·m·s al 95 % ({pale['residuo_coppia_Nms']['peggiore']:.1e} peggiore)")
-    log("\nSPAZIO MASSIMO E TEMPO MINIMO (spinta massima, da fermo a fermo)")
-    for s in spazio:
-        tmin = f"{s['tempo_min_con_disturbo_s']:.2f} s" if s["tempo_min_con_disturbo_s"] else "impossibile"
-        log(f"  asse {s['asse']}: in {ma['tempo_manovra_s']} s al massimo {s['spazio_max_senza_disturbo_m']:.3f} m "
-            f"({s['spazio_max_con_disturbo_m']:.3f} m con il disturbo nel caso peggiore); per {ma['distanza_m'][ASSI.index(s['asse'])]} m "
-            f"servono almeno {s['tempo_min_senza_disturbo_s']:.2f} s ({tmin} con disturbo); il disturbo è il "
-            f"{s['disturbo_sulla_spinta']:.0%} della spinta massima")
-    log("\nATTUATORE E RUOTE")
+    log("\nATTUATORE")
     log(f"  tempo di salita al 90 %: {at['tempo_salita_90_s']:.3f} s")
     log(f"  margine di fase dell'anello simulato ({'PID' if rg.get('polo_integrale_su_wn', 0.0) else 'PD'} + attuatore): {anello['margine_gradi']:.1f}° "
         f"alla pulsazione di taglio {anello['pulsazione_taglio_rad_s']:.2f} rad/s")
@@ -326,34 +480,19 @@ def run(input_file=INPUT_FILE, nome_run="dinamica"):
             "ritardo dell'attuatore troppo alto per questa banda")
     log("  per confronto, regolatore PD di riferimento con zero a wc/3 (non è l'anello simulato): "
         + ", ".join(f"{p:.0f}° a {wc:g} rad/s" for wc, p in pm.items()))
-    log(f"  ruote di reazione: momento in finestra {rw['H_finestra']:.3f} N·m·s = {rw['quota_ruota']:.0%} della capacità "
-        f"({ru['momento_ruote_max_Nms']} N·m·s)" + ("  -> SATURANO" if rw["quota_ruota"] > 1 else ""))
+    scritti_pale = [EX.scrivi_pale(pale, cfg, os.path.join(cart, "Pale"), es["formato_grafici"])]
 
-    # file di uscita
-    formati = es["formato_grafici"]
-    scritti = []
-    scritti += EX.grafico_moto(serie, cfg, os.path.join(cart, "01_grafici", "01_moto_tre_assi"), formati)
-    scritti += EX.grafico_spazio_massimo(cfg, os.path.join(cart, "01_grafici", "02_spazio_massimo"), formati)
-    scritti.append(EX.scrivi_serie(serie, es["passo_integrazione_s"], os.path.join(cart, "02_dati", "serie_temporali.csv")))
-    if mc:
-        scritti += EX.grafico_monte_carlo(mc, cfg, os.path.join(cart, "01_grafici", "03_monte_carlo"), formati)
-        scritti.append(EX.scrivi_monte_carlo(mc, os.path.join(cart, "02_dati", "monte_carlo.csv")))
-    scritti += EX.grafico_pale(pale, cfg, os.path.join(cart, "01_grafici", "04_pale"), formati)
-    riep = {"data": f"{dt.datetime.now():%d/%m/%Y %H:%M}", "impronta": imp, "massa_kg": m,
-            "assi": {ASSI[i]: ind[i] for i in range(3)},
-            "monte_carlo": {k: v for k, v in mc.items() if k not in ("inviluppo", "righe")} if mc else None,
-            "pale": {k: v for k, v in pale.items() if k != "U_campioni_g_mm"},
-            "spazio_massimo": spazio,
-            "margine_fase_gradi": {str(k): v for k, v in pm.items()}, "margine_fase_anello": anello, "t_salita_90_s": at["tempo_salita_90_s"], "ruote": rw,
-            "confronto_analisi": {"run": run_anl, "avvisi": avvisi_anl}}
-    scritti.append(EX.scrivi_riepilogo(riep, os.path.join(cart, "00_sintesi", "riepilogo.json")))
-    rel = [os.path.relpath(p, cart).replace(os.sep, "/") for p in scritti]
-    ris = EX.scrivi_risultato(riep, cfg, nome, sorted(["00_sintesi/RISULTATO.md"] + rel) + ["input_usato.py", "log.txt"],
-                              os.path.join(cart, "00_sintesi", "RISULTATO.md"))
+    riepiloghi, cfgs = {}, {}
+    for nome_amb in attivi:
+        cfgs[nome_amb] = cfg_ambiente(cfg, nome_amb)
+        riepiloghi[nome_amb] = esegui_ambiente(cfgs[nome_amb], os.path.join(cart, nome_amb), nome, imp, data, pm, anello, log)
+
+    confronto = EX.scrivi_confronto(riepiloghi, cfgs, nome, data, {"caso": run_dim, "avvisi": avvisi_dim},
+                                    os.path.join(cart, "CONFRONTO.md"))
     log("")
-    for p in [ris] + scritti:
-        log(f"  scritto: {os.path.relpath(p, cart)}")
-    CA.registra(base, {"data": riep["data"], "caso": nome, "impronta": imp, "run": nome_run,
+    for p in scritti_pale + [confronto]:
+        log(f"  scritto: {os.path.relpath(p, cart)}".replace(os.sep, "/"))
+    CA.registra(base, {"data": data, "caso": nome, "impronta": imp, "run": nome_run,
                        "durata_s": round(time.time() - t0)})
     log(f"\nFinito in {time.time() - t0:.0f} s. Risultati in {cart}")
     flog.close()
