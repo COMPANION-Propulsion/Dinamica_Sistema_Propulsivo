@@ -327,6 +327,13 @@ def scrivi_pale(pale, cfg, cartella, formati):
     return percorso
 
 
+def formatta_valore(x):
+    """Valore importato in una riga di testo (numeri a 5 cifre, elenchi con lo stesso formato)."""
+    if isinstance(x, (list, tuple)):
+        return "[" + ", ".join(formatta_valore(y) for y in x) + "]"
+    return f"{x:.6g}" if isinstance(x, float) else str(x)
+
+
 def scrivi_confronto(riepiloghi, cfgs, nome_caso, data, dimensionamento, percorso):
     """CONFRONTO.md: tabella affiancata degli ambienti con le grandezze principali."""
     nomi = list(riepiloghi)
@@ -398,12 +405,11 @@ def scrivi_confronto(riepiloghi, cfgs, nome_caso, data, dimensionamento, percors
             L.append("| " + " | ".join(r) + " |")
         else:
             L.append(f"| {r[0]} | " + " | ".join(r[1](riepiloghi[n]) for n in nomi) + " |")
-    if dimensionamento["caso"]:
-        L += ["", f"Controllo contro il dimensionamento (caso `{dimensionamento['caso']}`): "
-              + ("dati coerenti." if not dimensionamento["avvisi"] else "")]
-        L += [f"- ATTENZIONE: {a}" for a in dimensionamento["avvisi"]]
-    else:
-        L += ["", "Controllo contro il dimensionamento: nessun caso trovato."]
+    L += ["", f"Dati dal dimensionamento (caso `{dimensionamento['caso']}`)", "",
+          "| chiave | valore | fonte |", "|---|---|---|"]
+    L += [f"| {k} | {formatta_valore(x)} | {dimensionamento['fonti'][k]} |"
+          for k, x in dimensionamento["valori"].items() if not k.startswith("_")]
+    L += [""] + [f"- ATTENZIONE: {a}" for a in dimensionamento["avvisi"]]
     L.append("")
     with open(percorso, "w", encoding="utf-8") as fh:
         fh.write("\n".join(L))

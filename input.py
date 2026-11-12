@@ -2,42 +2,74 @@
 
 È l'unico file da modificare.  Dopo averlo salvato si lancia run_dinamica.py: i risultati vanno in
 risultati/<caso>/ (sintesi in 00_sintesi/RISULTATO.md).
-I dati della propulsione (spinta di una faccia, potenza, giri, pale) vengono dal dimensionamento, fonte [DIM]:
-si copiano a mano da ../Dimensionamento_Sistema_Propulsivo/risultati/<caso>/ (1_spinta/spinta.json, RIEPILOGO.md) e
-la run avvisa se non tornano con quel caso.  [STIMA] = valore stimato prima che il caso sia calcolato: da sostituire.
+I dati di progetto (massa, manovra, spinta di una faccia, potenza, giri, pale, tempo di salita) NON si scrivono qui:
+la run li legge da ../Dimensionamento_Sistema_Propulsivo/risultati/<caso>/, fonte [DIM], dove <caso> è il nome di CASO
+(vedi il blocco "DATI DAL DIMENSIONAMENTO" qui sotto).  [STIMA] = valore stimato, da sostituire con un dato vero.
 
 Sezioni:
       CASO            nome della cartella dei risultati
    0  ESECUZIONE      passo di integrazione, formato dei grafici, cartella dei risultati
-   1  CORPO           massa (concentrata nel baricentro)
-   2  ATTUATORE       spinta massima per asse e tempo di salita (dal dimensionamento)
-   3  MANOVRA         spostamento richiesto, tempo, finestra di volo, tolleranza (valori comuni a tutti gli ambienti)
+   1  CORPO           (vuota: la massa viene dal dimensionamento)
+   2  ATTUATORE       (vuota: spinta massima e tempo di salita vengono dal dimensionamento)
+   3  MANOVRA         finestra di volo, tolleranza, profilo (valori comuni a tutti gli ambienti)
    4  DISTURBO        accelerazione residua, velocità al rilascio, Monte Carlo (valori comuni a tutti gli ambienti)
    5  REGOLATORE      PD o PID sulla posizione
-   6  ENERGIA         potenza in funzione della spinta, tensione della batteria
-   7  RUOTE           bilancio delle ruote di reazione (dai dati del dimensionamento)
-   8  PALE            squilibrio dei rotori: pale stampate in 3D con densità diversa
-   9  AMBIENTI        un ambiente per soluzione (Volo_Parabolico, ISS): pressione e sovrascritture di DISTURBO e MANOVRA
+   6  ENERGIA         tensione della batteria, rendimento elettrico
+   7  RUOTE           bilancio delle ruote di reazione
+   8  PALE            squilibrio dei rotori: densità delle pale stampate in 3D, Monte Carlo
+   9  MOTORE          dati del motore: servono a calcolare il tempo di salita
+  10  AMBIENTI        un ambiente per soluzione (Volo_Parabolico, ISS): pressione e sovrascritture di DISTURBO e MANOVRA
 
 La run produce una soluzione per ogni ambiente attivo, in risultati/<caso>/<ambiente>/, più CONFRONTO.md.
-I dati di ATTUATORE e ENERGIA sono quelli di progetto, validi alla pressione ATTUATORE["pressione_progetto_Pa"]:
+I dati di spinta e potenza importati sono quelli di progetto, validi alla pressione ATTUATORE["pressione_progetto_Pa"]:
 in un ambiente con sigma = pressione / pressione_progetto la spinta massima è quella di progetto x sigma e la potenza
 per una data spinta è divisa per sqrt(sigma) (vedi dinamica_designer/volo.py).
 
 Convenzione degli assi: X, Y, Z come nel resto del progetto (X destra, Y fronte, Z alto).  Gli elenchi [X, Y, Z]
 seguono sempre questo ordine.  I tre assi sono indipendenti e si muovono contemporaneamente.
 
-Fonti: [DIM] dimensionamento della propulsione, caso RUN_POST_FIX_11-11, [EUG] ESA User Guide, [XLS] foglio di dimensionamento,
+Fonti: [DIM] dimensionamento della propulsione (caso con il nome di CASO), [EUG] ESA User Guide, [XLS] foglio di dimensionamento,
 [ERM] ERMES, ESA Fly Your Thesis 2022, Experiment Report v8 (Documentazione), [DPL] Deploy! Proposal (modello ESA),
 [team] proposta della chat del team (bias 0,01 g, rumore a 1 Hz, velocità iniziale in direzione casuale).
 SEGNAPOSTO = valore da sostituire appena disponibile un dato vero.
 """
 
 # =============================================================================
-# CASO   (cartella dei risultati: risultati/<nome>/)
+# DATI DAL DIMENSIONAMENTO (non si scrivono qui)
+# =============================================================================
+# CASO["nome"] sceglie il caso di ../Dimensionamento_Sistema_Propulsivo/risultati/<nome>/ da cui la run importa i
+# dati di progetto.  Si usa la parte del nome PRIMA di "__": "RUN_6kg" usa il caso "RUN_6kg"; "RUN_6kg__prova1" è
+# una variante della dinamica sullo stesso dimensionamento (altro input, altra cartella dei risultati).  Se il caso
+# non esiste, se il nome è None o se manca un file, la run si ferma con un errore.  Le grandezze importate non si
+# scrivono in questo file né in AMBIENTI: se ci sono, la run si ferma ("viene dal dimensionamento").
+# Le grandezze, con il file di origine (tutti dentro il caso) e il campo:
+#   CORPO.massa_kg                                    1_spinta/spinta.json: input.massa
+#   MANOVRA.distanza_m (uguale sui 3 assi)            1_spinta/spinta.json: input.distanza
+#   MANOVRA.tempo_manovra_s                           1_spinta/spinta.json: input.tempo
+#   ATTUATORE.pressione_progetto_Pa                   2_venturi/05_convergenza/design.json: case.p_amb
+#   ATTUATORE.spinta_max_positiva_N / _negativa_N,    4_sistema/04_cfd/condotto_con_ventola.json: spinta_con_ventola_N
+#     ENERGIA.spinta_rif_N                              x n_ugelli (spinta.json: input.n_ugelli)
+#   RUOTE.spinta_per_unita_N                          condotto_con_ventola.json: spinta_con_ventola_N
+#   ENERGIA.potenza_rif_W                             3_ventola/00_sintesi/report.json: best.cases[0].shaft_power_W
+#                                                       x n_ugelli / ENERGIA.rendimento_elettrico
+#   ENERGIA.esponente                                 4_sistema/00_sintesi/curva_potenza.json: fit potenza / spinta
+#   RUOTE.coppia_reazione_rotori_Nm                   report.json: best.cases[0].torque_Nm x squilibrio_coppia
+#                                                       x vortice_residuo_statore (sezione RUOTE)
+#   PALE.numero_pale, raggio_mozzo_mm, giri_progetto_rpm   report.json: best.design, best.cases[0].rpm
+#   PALE.lunghezza_mm, spessore_mm                    3_ventola/03_cad/CAD_info.json (diametro, mozzo, volume pala)
+#   PALE.larghezza_mm                                 3_ventola/02_excel/sections.csv: corda media
+#   PALE.giri_massimi_rpm                             curva_potenza.json: giri della potenza massima
+#   PALE.inerzia_rotore_motore_kgm2                   dalla sezione MOTORE (inerzia_rotore_kgm2)
+#   ATTUATORE.tempo_salita_90_s                       calcolato: propulsore.tempo_salita con l'inerzia delle pale
+#                                                       (3_ventola/00_sintesi/confronto_pale.json), del mozzo (CAD_info.json)
+#                                                       e del motore (sezione MOTORE) + ritardo del regolatore
+# La run scrive i valori importati e le fonti in risultati/<caso>/dati_dimensionamento.json e in CONFRONTO.md.
+
+# =============================================================================
+# CASO   (cartella dei risultati: risultati/<nome>/; il nome sceglie anche il caso del dimensionamento)
 # =============================================================================
 CASO = {
-    "nome": "RUN_POST_FIX_11-11_v2",                  # None = nome automatico (massa, distanza, tempo + impronta degli input)
+    "nome": "Run_20261112_fine_4kg",  # obbligatorio: prima di "__" il nome del caso del dimensionamento (vedi sopra)
     "sovrascrivi": False,          # True = riusa una cartella con nome anche se gli input erano diversi
 }
 
@@ -55,31 +87,24 @@ ESECUZIONE = {
 # 1. CORPO
 # =============================================================================
 CORPO = {
-    "massa_kg": 4.5,            # [team] massa di missione, la stessa del Dimensionamento
+    # la massa di missione viene dal dimensionamento (1_spinta/spinta.json)
 }
 
 # =============================================================================
-# 2. ATTUATORE   (dal dimensionamento: valori a 101325 Pa)
+# 2. ATTUATORE   (tutto dal dimensionamento: valori alla pressione di progetto)
 # =============================================================================
 ATTUATORE = {
-    "spinta_max_positiva_N": [1.974, 1.974, 1.974],   # [DIM] spinta di una faccia a 101325 Pa: 2 ugelli x 0,987 N con la ventola vera nel
-                                   # condotto ai giri di progetto (4_sistema/04_cfd/condotto_con_ventola.json; disco uniforme
-                                   # 1,027 N). La curva di potenza arriva a 1,686 N per ugello a 23349 rpm: valore prudente
-    "spinta_max_negativa_N": [1.974, 1.974, 1.974],   # [DIM] faccia opposta, uguale
-    "pressione_progetto_Pa": 101325.0,  # [DIM] p_amb del dimensionamento, 2_venturi/05_convergenza/design.json
-    "tempo_salita_90_s": 0.16,     # [STIMA] 0,11 s di salita dei giri (propulsore.tempo_salita: motore 1404 3800 kV, 24 V, I_max 10 A,
-                                   # coppia 6,08 mN·m a 18515 rpm; J = 1,36e-6 kg·m² = pale 6,19e-7 [DIM] + mozzo pieno in PLA
-                                   # 6,2e-7 + motore 1,2e-7) + 0,05 s di ritardo del regolatore.  Con il mozzo alleggerito J
-                                   # scende verso 0,74e-6 e la salita a 0,06 s.  Il ritardo è tau = t90 / 2,3
+    # spinta massima per asse, pressione di progetto e tempo di salita al 90 % (t90) vengono dal dimensionamento:
+    # t90 si calcola dal motore (sezione MOTORE) e dall'inerzia dell'albero.  Il ritardo dell'attuatore nella
+    # simulazione è tau = t90 / 2,3
 }
 
 # =============================================================================
 # 3. MANOVRA
 # =============================================================================
 MANOVRA = {
-    "distanza_m": [0.2, 0.2, 0.2],       # [team] spostamento richiesto su X, Y, Z (da fermo a fermo), come negli altri due progetti
-    "tempo_manovra_s": 5.0,              # [team] tempo per completarlo, uguale alla finestra
-    "finestra_s": 5.0,                   # [ESA] finestra utile per oggetti liberi: si simula fino a qui
+    # distanza_m (spostamento richiesto su X, Y, Z da fermo a fermo) e tempo_manovra_s vengono dal dimensionamento
+    "finestra_s": 5.0,                   # [ESA] finestra utile per oggetti liberi: si simula fino a qui (>= tempo della manovra)
     "tolleranza_posizione_mm": 5.0,      # per il tempo di assestamento
     "profilo": "minimo_jerk",            # "minimo_jerk" (polinomio di quinto grado), "gradino" oppure "bang_bang"
                                          # (accelerazione 4 d / T^2 per T/2, poi l'opposta).  Il bang-bang è il profilo con cui
@@ -122,16 +147,14 @@ REGOLATORE = {
 }
 
 # =============================================================================
-# 6. ENERGIA   (potenza per asse in funzione della spinta alla pressione di progetto: P = P_rif (F / F_rif)^esponente;
+# 6. ENERGIA   (potenza per asse in funzione della spinta alla pressione di progetto: P = P_rif (F / F_rif)^esponente,
+#               con P_rif, F_rif ed esponente dal dimensionamento;
 #               nell'ambiente si divide per sqrt(sigma), sigma = pressione / pressione_progetto)
 # =============================================================================
 ENERGIA = {
     "tensione_batteria_V": 24.0,         # pacco NiMH 20S: corrente di picco = potenza totale di picco / tensione
-    "potenza_rif_W": 31.43,              # [DIM] elettrica per faccia: 2 ugelli x 11,787 W all'albero / 0,75
-    "spinta_rif_N": 1.974,               # [DIM] spinta della faccia a quella potenza (ventola vera, 18515 rpm)
     "rendimento_elettrico": 0.75,        # [STIMA] motore 0,80 x regolatore 0,93: potenza elettrica = potenza all'albero / questo
-    "esponente": 1.4,                    # [DIM] dalla curva di potenza (4_sistema/00_sintesi/curva_potenza.json): fit 1,37 tra 0,1 e
-                                         # 1,03 N per ugello; con 1,4 a 0,25 N per ugello l'errore è circa 1 %
+    # potenza di riferimento, spinta di riferimento ed esponente vengono dal dimensionamento
 }
 
 # =============================================================================
@@ -141,8 +164,10 @@ RUOTE = {
     "scostamento_baricentro_mm": 5.0,    # [XLS] offset del baricentro dalla linea della spinta
     "braccio_coppia_m": 0.2104,          # braccio della spinta: 12 condotti sugli spigoli di un cubo da 340 mm
     "squilibrio_coppia": 0.05,           # squilibrio di spinta tra le due ventole di una coppia (5 %)
-    "spinta_per_unita_N": 0.987,        # [DIM] spinta di un ugello con la ventola vera
-    "coppia_reazione_rotori_Nm": 1.5e-5,# [STIMA] 5 % di squilibrio x 5 % di vortice residuo dopo lo statore x 6,08 mN·m [DIM] (lo statore a 7 pale annulla la coppia netta nel calcolo)
+    "vortice_residuo_statore": 0.05,     # [STIMA] quota della coppia del rotore che resta come vortice dopo lo statore (5 %): coppia di
+                                         # reazione dei rotori = squilibrio_coppia x questo x coppia del rotore [DIM] (lo statore a
+                                         # 7 pale annulla la coppia netta nel calcolo).  spinta_per_unita_N e coppia_reazione_rotori_Nm
+                                         # vengono dal dimensionamento
     "momento_rotori_in_avvio_Nms": 0.0,  # [team] momento angolare dei rotori non compensati
     "momento_ruote_max_Nms": 0.15,       # [XLS] SEGNAPOSTO: momento angolare massimo delle ruote
     "frequenze_margine_fase_rad_s": [1.0, 2.0, 4.0],
@@ -154,26 +179,35 @@ RUOTE = {
 # Ogni pala è un parallelepipedo lunghezza x larghezza x spessore, attaccato al mozzo.  La densità di ogni pala è
 # estratta a caso in [densita_min, densita_max]: le masse diverse spostano il baricentro del rotore e nasce una forza
 # rotante ai giri della ventola.  Calcolo in forma chiusa (vedi dinamica_designer/pale.py), fuori dalla simulazione
-# nel tempo.  Dati della ventola del dimensionamento [DIM]: ventola da 58,07 mm, mozzo da 26,13 mm, pala trattata come parallelepipedo di pari volume.
+# nel tempo.  Numero di pale, geometria e giri vengono dal dimensionamento [DIM]; la pala è trattata come parallelepipedo di pari volume.
 PALE = {
-    "numero_pale": 3,                    # [DIM] NACA0012
-    "lunghezza_mm": 15.47,               # [DIM] lunghezza della pala nel CAD (raggio 28,54 - mozzo 13,07, gioco di punta 0,5 mm incluso)
-    "larghezza_mm": 15.4,                # [DIM] corda media (10,4 mm alla radice, 18,4 in punta: 3_ventola/02_excel/sections.csv)
-    "spessore_mm": 1.46,                 # [DIM] spessore equivalente: volume della pala nel CAD 347,6 mm³ / (15,47 x 15,4)
-    "raggio_mozzo_mm": 13.07,            # [DIM] mozzo da 26,13 mm
     "densita_min_kg_m3": 1150.0,         # range di densità delle pale stampate.  PLA in FDM al 100 %: il filamento
     "densita_max_kg_m3": 1250.0,         # è 1240 kg/m^3, i vuoti tra le linee tolgono dal 2 all'8 %.  Altri
                                          # materiali: resina SLA 1100-1200, PETG 1230-1270, PA12 SLS 950-1010
-    "giri_progetto_rpm": 18515.0,        # [DIM]
-    "giri_massimi_rpm": 23349.0,         # [DIM] fine della curva di potenza (23,57 W all'albero, 1,686 N per ugello)
-    "inerzia_rotore_motore_kgm2": 1.2e-7,# [team] motore 1404 3800 kV
     "ventole_fuori_asse": 8,             # 12 ventole, 2 per verso: su un asse spingono le 8 degli altri due
     "campioni": 2000,                    # rotori estratti nel Monte Carlo
     "seme": 1,
 }
 
 # =============================================================================
-# 9. AMBIENTI   (una soluzione per ambiente attivo: risultati/<caso>/<ambiente>/)
+# 9. MOTORE   (motore e regolatore: servono a calcolare il tempo di salita, vedi propulsore.tempo_salita)
+# =============================================================================
+# t90 = tempo per portare l'albero al 90 % della spinta di progetto + ritardo del regolatore.  L'inerzia dell'albero è
+# la somma di pale [DIM], mozzo (cilindro pieno: diametro e lunghezza dal CAD x densità x riempimento) e rotore del motore.
+MOTORE = {
+    "Kv": 3800.0,                        # [team] motore 1404: giri/min per volt a vuoto
+    "R": 0.16,                           # [team] resistenza di fase (ohm)
+    "I0": 0.4,                           # [team] corrente a vuoto (A)
+    "I_max": 10.0,                       # [team] corrente massima del regolatore (A)
+    "inerzia_rotore_kgm2": 1.2e-7,       # [team] inerzia del rotore del motore
+    "duty_max": 0.95,                    # tensione massima applicabile = duty_max x tensione della batteria
+    "ritardo_regolatore_s": 0.05,        # [STIMA] ritardo del regolatore di giri, sommato alla salita dei giri
+    "densita_mozzo_kg_m3": 1200.0,       # PLA stampato pieno
+    "riempimento_mozzo": 1.0,            # 1 = mozzo pieno; < 1 = alleggerito (massa del mozzo x riempimento)
+}
+
+# =============================================================================
+# 10. AMBIENTI   (una soluzione per ambiente attivo: risultati/<caso>/<ambiente>/)
 # =============================================================================
 # Ogni ambiente ha "attivo", "pressione_Pa" e, facoltative, le sezioni DISTURBO e MANOVRA (anche CORPO, ATTUATORE,
 # REGOLATORE, ENERGIA, RUOTE): le chiavi scritte qui sovrascrivono quelle delle sezioni di base, le altre restano.
@@ -195,7 +229,7 @@ AMBIENTI = {
         "pressione_Pa": 101325.0,                # cabina della Stazione, da sostituire se serve
         "DISTURBO": {
             "bias_g": 4e-5,                      # [STIMA] resistenza dell'aria di ventilazione della cabina: 0,15 m/s su un cubo
-                                                 # da 0,34 m, Cd 1,05 -> 1,6 mN su 4,5 kg; la microgravità quasi statica (circa
+                                                 # da 0,34 m, Cd 1,05 -> 1,6 mN, cioè 4e-5 g per una massa di circa 4 kg (dipende dalla massa); la microgravità quasi statica (circa
                                                  # 1e-6 g) è trascurabile al confronto.  Da sostituire
             "rumore_sigma_g": 1e-5,              # [STIMA] vibrazioni di bordo.  Da sostituire
             "velocita_iniziale_m_s": 0.005,      # [STIMA] rilascio a mano.  Da sostituire

@@ -18,7 +18,7 @@ import time
 import numpy as np
 
 from . import caso as CA
-from . import confronto_dimensionamento as CF
+from . import dimensionamento as DM
 from . import export as EX
 from . import pale as PA
 from . import propulsore as DY
@@ -27,7 +27,7 @@ from . import volo as VO
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))    # cartella del progetto
 INPUT_FILE = os.path.join(ROOT, "input.py")
 ASSI = "XYZ"
-SEZIONI = ("ESECUZIONE", "CORPO", "ATTUATORE", "MANOVRA", "DISTURBO", "REGOLATORE", "ENERGIA", "RUOTE", "PALE")
+SEZIONI = ("ESECUZIONE", "CORPO", "ATTUATORE", "MANOVRA", "DISTURBO", "REGOLATORE", "ENERGIA", "RUOTE", "PALE", "MOTORE")
 # sezioni che un ambiente può sovrascrivere (le chiavi dell'ambiente si fondono sulla sezione di base)
 SEZ_AMBIENTE = ("CORPO", "ATTUATORE", "MANOVRA", "DISTURBO", "REGOLATORE", "ENERGIA", "RUOTE")
 PROFILI = tuple(VO.PROFILI)
@@ -43,8 +43,13 @@ STAT_POTENZA = ("potenza_picco_W", "energia_J", "potenza_media_W", "corrente_pic
 
 
 # ---------------------------------------------------------------- input
-def carica_input(percorso):
-    """Dizionari dell'input (SEZIONI) più CASO, controllati."""
+def carica_input(percorso, radice_dimensionamento=None):
+    """Dizionari dell'input (SEZIONI) più CASO, con i dati del dimensionamento importati e controllati.
+
+    I dati di progetto (massa, manovra, spinta, potenza, pale, t90) si leggono dal caso del dimensionamento che ha il
+    nome di CASO["nome"] (parte prima di "__"), cercato in radice_dimensionamento (predefinita:
+    ../Dimensionamento_Sistema_Propulsivo/risultati).  Il risultato è in cfg["DIMENSIONAMENTO"].
+    """
     spec = importlib.util.spec_from_file_location("input_dinamica", percorso)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -54,6 +59,17 @@ def carica_input(percorso):
     if not amb:
         raise ValueError("manca la sezione AMBIENTI in input.py (un ambiente per soluzione, vedi input.py)")
     cfg["AMBIENTI"] = {str(k): dict(v) for k, v in dict(amb).items()}
+    doppi = DM.chiavi_vietate(cfg)
+    if doppi:
+        raise ValueError("Errori in input:" + chr(10) + " - " + (chr(10) + " - ").join(doppi))
+    for sez, k in (("ENERGIA", "rendimento_elettrico"), ("ENERGIA", "tensione_batteria_V"),
+                   ("RUOTE", "squilibrio_coppia"), ("RUOTE", "vortice_residuo_statore")):
+        if k not in cfg[sez]:
+            raise ValueError(f"manca {sez}['{k}'] in input.py (serve per i dati importati dal dimensionamento)")
+    cartella = DM.cartella_caso(cfg["CASO"].get("nome"), radice_dimensionamento)       # errore se il caso non c'è
+    valori, fonti, avvisi = DM.importa(cfg, cartella)
+    DM.applica(cfg, valori)
+    cfg["DIMENSIONAMENTO"] = {"caso": os.path.basename(cartella), "valori": valori, "fonti": fonti, "avvisi": avvisi}
     _controlla(cfg)
     return cfg
 
@@ -173,7 +189,8 @@ def _controlla_sezioni(c):
 
 def impronta(cfg):
     """Hash breve dei dati che cambiano i risultati: stessa impronta = stessi risultati."""
-    dati = {k: v for k, v in cfg.items() if k not in ("CASO", "AMBIENTI")}
+    dati = {k: v for k, v in cfg.items() if k not in ("CASO", "AMBIENTI", "DIMENSIONAMENTO")}
+    dati["DIMENSIONAMENTO"] = cfg["DIMENSIONAMENTO"]["caso"]      # i valori importati sono già nelle sezioni
     dati["AMBIENTI"] = {n: {k: v for k, v in a.items() if k != "attivo"} for n, a in cfg["AMBIENTI"].items()
                         if a.get("attivo", True)}
     dati["ESECUZIONE"] = {k: v for k, v in cfg["ESECUZIONE"].items() if k not in SOLO_FORMA}
@@ -414,7 +431,7 @@ def esegui_ambiente(cfg, cart, nome_caso, imp, data, pm, anello, log):
 
 
 # ---------------------------------------------------------------- run
-def run(input_file=INPUT_FILE, nome_run="dinamica"):
+def run(input_file=INPUT_FILE, nome_run="dinamica", radice_dimensionamento=None):
     """Esegue la run; ritorna la cartella del caso (None se le verifiche falliscono)."""
     for f in (sys.stdout, sys.stderr):
         try:
@@ -422,7 +439,7 @@ def run(input_file=INPUT_FILE, nome_run="dinamica"):
         except (AttributeError, ValueError):
             pass
     t0 = time.time()
-    cfg = carica_input(input_file)
+    cfg = carica_input(input_file, radice_dimensionamento)
     es = cfg["ESECUZIONE"]
     if es.get("verifiche", True):
         from . import verifiche as VF
@@ -450,11 +467,19 @@ def run(input_file=INPUT_FILE, nome_run="dinamica"):
     log(f"Massa {m:.2f} kg nel baricentro; ambienti attivi: {', '.join(attivi)}")
     log(f"{EX.descrivi_regolatore(rg)}; attuatore t90 = {at['tempo_salita_90_s']} s; "
         f"dati di progetto alla pressione {at['pressione_progetto_Pa']:g} Pa")
-    run_dim, avvisi_dim = CF.confronta(cfg, ROOT)
-    log(f"Dati [DIM] dell'input confrontati con il caso del dimensionamento {run_dim}: "
-        + ("coerenti" if not avvisi_dim else f"{len(avvisi_dim)} differenze") if run_dim else "Dati [DIM] non controllati")
-    for a in avvisi_dim:
+    dim = cfg["DIMENSIONAMENTO"]
+    log(f"\nDATI DAL DIMENSIONAMENTO (caso {dim['caso']}):")
+    for k, x in dim["valori"].items():
+        if not k.startswith("_"):
+            log(f"  {k:<36}{EX.formatta_valore(x):<30}{dim['fonti'][k]}")
+    J = dim["valori"]["_J"]
+    log(f"  inerzia dell'albero: pale {J['pale']:.3g} + mozzo {J['mozzo']:.3g} + motore {J['motore']:.3g} = "
+        f"{J['totale']:.3g} kg·m²; salita al 90 % dei giri in {J['salita_s']:.3f} s")
+    for a in dim["avvisi"]:
         log(f"  ATTENZIONE: {a}")
+    with open(os.path.join(cart, "dati_dimensionamento.json"), "w", encoding="utf-8") as fh:
+        json.dump({"caso": dim["caso"], "valori": dim["valori"], "fonti": dim["fonti"], "avvisi": dim["avvisi"]},
+                  fh, indent=1, ensure_ascii=False)
 
     # calcoli che non dipendono dall'ambiente: una volta sola
     pale = PA.analizza(cfg["PALE"], m, max(max(at["spinta_max_positiva_N"]), max(at["spinta_max_negativa_N"])))
@@ -487,7 +512,7 @@ def run(input_file=INPUT_FILE, nome_run="dinamica"):
         cfgs[nome_amb] = cfg_ambiente(cfg, nome_amb)
         riepiloghi[nome_amb] = esegui_ambiente(cfgs[nome_amb], os.path.join(cart, nome_amb), nome, imp, data, pm, anello, log)
 
-    confronto = EX.scrivi_confronto(riepiloghi, cfgs, nome, data, {"caso": run_dim, "avvisi": avvisi_dim},
+    confronto = EX.scrivi_confronto(riepiloghi, cfgs, nome, data, dim,
                                     os.path.join(cart, "CONFRONTO.md"))
     log("")
     for p in scritti_pale + [confronto]:

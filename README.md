@@ -6,8 +6,9 @@ con i suoi propulsori, il regolatore di posizione e i disturbi che troverà in v
 perfetti, il rilascio che lascia il cubo con un po' di velocità, le pale stampate che non pesano tutte uguali.
 
 Il dimensionamento dei condotti, della ventola e del motore non si fa qui ma nella cartella accanto,
-`../Dimensionamento_Sistema_Propulsivo`. Da lì si copiano a mano in `input.py` i numeri che servono (spinta di una
-faccia, potenza, giri, pale), fonte `[DIM]`. Il collegamento è spiegato più sotto.
+`../Dimensionamento_Sistema_Propulsivo`. Da lì la run importa da sola i numeri che servono (massa, manovra, spinta di
+una faccia, potenza, giri, pale, tempo di salita), fonte `[DIM]`: non si scrivono in `input.py`. Il collegamento è
+spiegato più sotto.
 
 
 ## Come si lancia
@@ -56,7 +57,7 @@ Dinamica_Sistema_Propulsivo/
 │   ├── propulsore.py      salita della spinta, margine di fase, ruote di reazione
 │   ├── export.py          grafici, tabelle, RISULTATO.md
 │   ├── caso.py            nome e cartella del caso (una cartella per ambiente)
-│   ├── confronto_dimensionamento.py  controllo dei dati [DIM] contro il caso del dimensionamento
+│   ├── dimensionamento.py  import dei dati [DIM] dal caso del dimensionamento con lo stesso nome
 │   └── verifiche.py       i controlli contro soluzioni analitiche
 ├── tests/                 test pytest
 └── risultati/             un caso per cartella (non va su git)
@@ -67,7 +68,7 @@ Dinamica_Sistema_Propulsivo/
 
 ### Il cubo
 
-Il cubo è trattato come un punto con tutta la massa nel baricentro (4,5 kg oggi, la massa di missione, la stessa del dimensionamento). Si muove lungo X, Y e Z nello
+Il cubo è trattato come un punto con tutta la massa nel baricentro (la massa di missione, importata dal dimensionamento: 4,5 kg nel caso `RUN_POST_FIX_11-11`). Si muove lungo X, Y e Z nello
 stesso momento, ma i tre assi non si parlano: quello che succede su X non cambia Y. Le rotazioni non ci sono. È una
 semplificazione forte, ma per capire se la spinta basta e quanto bene si ferma il cubo è sufficiente.
 
@@ -274,19 +275,19 @@ ruote di reazione nella finestra (modelli in `propulsore.py`).
 ## Il file di input, sezione per sezione
 
 Tutti gli elenchi a tre valori seguono l'ordine [X, Y, Z]. Accanto a ogni numero c'è un commento con la fonte:
-`[DIM]` viene dal dimensionamento della propulsione (caso RUN_POST_FIX_11-11), `[ERM]` dal report ERMES, `[XLS]` dal foglio di dimensionamento,
+`[DIM]` viene dal dimensionamento della propulsione (importato, non scritto in `input.py`), `[ERM]` dal report ERMES, `[XLS]` dal foglio di dimensionamento,
 `[team]` dalla chat del team. `SEGNAPOSTO` vuol dire che il valore è provvisorio e va sostituito appena c'è un dato vero.
 
 | sezione | cosa si imposta |
 |---|---|
-| `CASO` | il nome della cartella dei risultati (`None` = automatico) e se si può sovrascrivere un caso con input diversi |
+| `CASO` | il nome della cartella dei risultati, che è anche il nome del caso del dimensionamento da importare (obbligatorio, vedi sotto), e se si può sovrascrivere un caso con input diversi |
 | 0 `ESECUZIONE` | passo di integrazione, formato dei grafici, cartella di uscita, verifiche sì o no |
-| 1 `CORPO` | la massa del cubo |
-| 2 `ATTUATORE` | spinta massima di progetto per verso e per asse, tempo di salita al 90 %, pressione di progetto |
-| 3 `MANOVRA` | distanza, tempo della manovra, durata della finestra simulata, tolleranza, profilo del riferimento (`minimo_jerk`, `gradino`, `bang_bang`): valori comuni, ogni ambiente può cambiarli |
+| 1 `CORPO` | vuota: la massa viene dal dimensionamento |
+| 2 `ATTUATORE` | vuota: spinta massima, tempo di salita al 90 % e pressione di progetto vengono dal dimensionamento |
+| 3 `MANOVRA` | durata della finestra simulata (distanza e tempo della manovra vengono dal dimensionamento), tolleranza, profilo del riferimento (`minimo_jerk`, `gradino`, `bang_bang`): valori comuni, ogni ambiente può cambiarli |
 | 4 `DISTURBO` | bias, sigma e banda del rumore, velocità iniziale, sinusoide facoltativa, campioni del Monte Carlo, seme: valori comuni, ogni ambiente può cambiarli |
 | 5 `REGOLATORE` | banda `wn`, smorzamento `zeta`, terzo polo `polo_integrale_su_wn` (0 = PD), feedforward sì o no |
-| 6 `ENERGIA` | potenza in funzione della spinta, `P = P_rif (F / F_rif)^esponente` (alla pressione di progetto), tensione della batteria |
+| 6 `ENERGIA` | tensione della batteria e rendimento elettrico (potenza e spinta di riferimento ed esponente di `P = P_rif (F / F_rif)^esponente` vengono dal dimensionamento) |
 | 7 `RUOTE` | dati per il bilancio delle ruote di reazione |
 | 8 `PALE` | numero di pale, lunghezza, larghezza, spessore, raggio del mozzo, range di densità, giri, campioni |
 | 9 `AMBIENTI` | un dizionario ordinato, un ambiente per soluzione: `attivo`, `pressione_Pa` e le sovrascritture di `DISTURBO`, `MANOVRA` (e, se serve, `CORPO`, `ATTUATORE`, `REGOLATORE`, `ENERGIA`, `RUOTE`) |
@@ -304,6 +305,7 @@ risultati/
 └── <caso>/                        per esempio RUN_POST_FIX_11-11
     ├── caso.json                  nome, impronta, data, ambienti
     ├── input_usato.py             copia esatta dell'input della run
+    ├── dati_dimensionamento.json  valori importati dal dimensionamento, con file e campo d'origine
     ├── log.txt                    quello che la run ha scritto a schermo
     ├── CONFRONTO.md               tabella affiancata degli ambienti: da leggere per primo
     ├── Pale/                      squilibrio dei rotori, uguale per tutti gli ambienti: calcolato una volta
@@ -326,13 +328,15 @@ risultati/
 Le verifiche analitiche, l'analisi delle pale e il margine di fase si eseguono una sola volta per run, non per ambiente.
 `CONFRONTO.md` mette in colonna gli ambienti: pressione e sigma, spinta massima, disturbo, errore a fine manovra e
 massimo nel caso peggiore, spinta massima usata e quota della massima, tempo in saturazione, quota di manovre
-assestate nel Monte Carlo, potenza di picco totale, energia totale, corrente di picco, margine di fase, e gli avvisi
-del controllo contro il dimensionamento.
+assestate nel Monte Carlo, potenza di picco totale, energia totale, corrente di picco, margine di fase, e, in fondo, i dati
+importati dal dimensionamento con la loro fonte.
 
-Il nome automatico del caso finisce con l'impronta, otto caratteri calcolati dagli input che cambiano i risultati
-(non dal nome o dal formato dei grafici). Stessa impronta, stessi risultati. Rilanciare con gli stessi input riscrive
-lo stesso caso; con input diversi il nome cambia e nessuna run cancella un'altra. Accendere o spegnere un ambiente
-cambia l'impronta, perché cambia l'insieme dei risultati.
+Il nome del caso è `CASO["nome"]` (obbligatorio, vedi "Collegamento con il dimensionamento"). L'impronta sono otto
+caratteri calcolati dagli input che cambiano i risultati (non dal nome o dal formato dei grafici) e dal caso del
+dimensionamento. Stessa impronta, stessi risultati. Rilanciare con gli stessi input riscrive lo stesso caso; una cartella
+che contiene un caso con input diversi viene rifiutata, salvo `CASO["sovrascrivi"] = True`: per provare una variante si
+cambia il suffisso, ad esempio `RUN_6kg__prova2`. Accendere o spegnere un ambiente cambia l'impronta, perché cambia
+l'insieme dei risultati.
 
 Come leggere `RISULTATO.md` di un ambiente: la tabella del caso peggiore dice se il cubo arriva e si ferma anche nelle condizioni
 più sfavorevoli; la tabella del Monte Carlo dice quanto spesso ce la fa in condizioni realistiche. La riga da guardare
@@ -386,30 +390,58 @@ solo per lavorare sul codice.
 
 ## Collegamento con il dimensionamento
 
-La dinamica non legge il dimensionamento da sola: i dati si copiano a mano in `input.py` (fonte `[DIM]`) da
-`../Dimensionamento_Sistema_Propulsivo/risultati/<caso>/`, dove `<caso>` è `RUN_POST_FIX_11-11`:
+La run importa i dati di progetto dal dimensionamento, senza copiarli a mano. Il flusso è:
 
-- `1_spinta/spinta.json`: massa, distanza, tempo, disturbo residuo, spinta di una faccia e di un ugello;
-- `3_ventola/00_sintesi/report.json` e `3_ventola/02_excel/sections.csv`: numero di pale (3, NACA0012), giri (18515 rpm),
-  potenza all'albero, mozzo, corda e geometria della pala;
-- `2_venturi/05_convergenza/design.json`: pressione di progetto (`p_amb`);
-- `4_sistema/04_cfd/condotto_con_ventola.json` e `4_sistema/00_sintesi/curva_potenza.json`: spinta con la ventola vera
-  (1,974 N per faccia, 0,987 N per ugello) e curva di potenza (fino a 23349 rpm).
+1. si calcola un caso nel dimensionamento (`../Dimensionamento_Sistema_Propulsivo/risultati/<caso>/`, ad esempio
+   `RUN_6kg`);
+2. in `input.py` si scrive lo stesso nome in `CASO["nome"]`: `"RUN_6kg"`. La parte del nome prima di `__` è il caso del
+   dimensionamento: `"RUN_6kg__prova1"` è una variante della dinamica (altri input, altra cartella di risultati) sullo
+   stesso dimensionamento `RUN_6kg`;
+3. `python run_dinamica.py` legge il caso (`dinamica_designer/dimensionamento.py`), riempie le sezioni con i valori
+   importati e li scrive, con il file e il campo d'origine, nel log, in `risultati/<caso>/dati_dimensionamento.json` e
+   in `CONFRONTO.md` (sezione "Dati dal dimensionamento").
 
-Le chiavi di `input.py` con fonte `[DIM]` sono `ATTUATORE` (spinte massime, pressione di progetto), `ENERGIA`
-(`potenza_rif_W`, `spinta_rif_N`, `esponente`), `RUOTE["spinta_per_unita_N"]` e le chiavi di `PALE` che descrivono la
-ventola (numero, lunghezza, larghezza, spessore, mozzo, giri). Tempo di salita, braccio della coppia, coppia di reazione dei
-rotori e disposizione delle ventole non escono dal dimensionamento e restano `[STIMA]` o `[team]`.
+Regole, tutte con errore che ferma la run:
 
-Spinta, potenza e giri copiati valgono a 101 325 Pa. La scala all'ambiente (sigma, vedi sopra) la fa il codice: non si
-riscalano a mano.
+- `CASO["nome"]` è obbligatorio (niente nome automatico) e deve coincidere con un caso del dimensionamento: se manca,
+  l'errore elenca i casi disponibili;
+- se manca un file o un campo (ad esempio la ventola non è ancora accettata) l'errore dice quale file e quale campo;
+- una grandezza importata scritta in `input.py` o nelle sovrascritture di `AMBIENTI` è un errore ("viene dal
+  dimensionamento: toglila da input.py"), così non ci sono doppioni.
 
-`dinamica_designer/confronto_dimensionamento.py` confronta questi dati con il caso del dimensionamento che ha lo stesso
-nome di `CASO["nome"]` (se non c'è, con l'ultimo caso calcolato) e scrive gli avvisi nel log e in `CONFRONTO.md`. Controlla
-massa, distanza e tempo (tolleranza 1 %), pressione di progetto (1 %), spinta di riferimento, spinta per ugello, potenza
-elettrica (ugelli x potenza all'albero / rendimento), giri e raggio del mozzo (5 %), il numero di pale, che la spinta
-massima non superi quella di progetto della faccia, e che il bias di un ambiente attivo non superi il disturbo residuo
-del dimensionamento. Il controllo avvisa e non ferma la run.
+Cosa si importa, dal caso `<caso>` (il blocco "DATI DAL DIMENSIONAMENTO" in cima a `input.py` ha lo stesso elenco):
+
+| grandezza | fonte |
+|---|---|
+| `CORPO["massa_kg"]`, `MANOVRA["distanza_m"]` (uguale sui tre assi), `MANOVRA["tempo_manovra_s"]` | `1_spinta/spinta.json`: `input.massa`, `input.distanza`, `input.tempo` |
+| `ATTUATORE["pressione_progetto_Pa"]` | `2_venturi/05_convergenza/design.json`: `case.p_amb` |
+| `ATTUATORE["spinta_max_positiva_N"]` e `["spinta_max_negativa_N"]`, `ENERGIA["spinta_rif_N"]` | `4_sistema/04_cfd/condotto_con_ventola.json`: `spinta_con_ventola_N` x numero di ugelli (`spinta.json`) |
+| `RUOTE["spinta_per_unita_N"]` | `condotto_con_ventola.json`: `spinta_con_ventola_N` |
+| `ENERGIA["potenza_rif_W"]` | `3_ventola/00_sintesi/report.json`: `best.cases[0].shaft_power_W` x ugelli / `rendimento_elettrico` |
+| `ENERGIA["esponente"]` | fit log-log potenza / spinta di `4_sistema/00_sintesi/curva_potenza.json` (righe calcolate, da 0,1 N alla spinta di progetto per ugello) |
+| `RUOTE["coppia_reazione_rotori_Nm"]` | `report.json` `torque_Nm` x `squilibrio_coppia` x `vortice_residuo_statore` (le due chiavi sono in `RUOTE`) |
+| `PALE`: `numero_pale`, `raggio_mozzo_mm`, `giri_progetto_rpm` | `report.json`: `best.design`, `best.cases[0].rpm` |
+| `PALE`: `lunghezza_mm`, `spessore_mm` | `3_ventola/03_cad/CAD_info.json` (diametro, mozzo, volume della pala) |
+| `PALE["larghezza_mm"]` | media delle corde di `3_ventola/02_excel/sections.csv` |
+| `PALE["giri_massimi_rpm"]` | riga di potenza massima di `curva_potenza.json` |
+| `PALE["inerzia_rotore_motore_kgm2"]` | copiata da `MOTORE["inerzia_rotore_kgm2"]` |
+| `ATTUATORE["tempo_salita_90_s"]` | calcolato (sotto) |
+
+**Tempo di salita.** `propulsore.tempo_salita` porta l'albero al 90 % della spinta di progetto: inerzia = pale
+(`3_ventola/00_sintesi/confronto_pale.json`, colonna della scelta) + mozzo (cilindro pieno, diametro e lunghezza da
+`CAD_info.json` x `densita_mozzo_kg_m3` x `riempimento_mozzo`) + rotore del motore; coppia e giri dal report, tensione
+dalla batteria. A questo si somma `ritardo_regolatore_s`. Motore e mozzo sono nella sezione `MOTORE` di `input.py`.
+Con il motore 1404 e il caso `RUN_POST_FIX_11-11` l'inerzia è 1,37e-6 kg·m², la salita 0,114 s e t90 = 0,164 s.
+
+Spinta, potenza e giri importati valgono a 101 325 Pa. La scala all'ambiente (sigma, vedi sopra) la fa il codice: non si
+riscalano a mano. Restano in `input.py` solo i dati propri della dinamica: esecuzione, finestra, tolleranza, profilo,
+disturbo, regolatore, tensione e rendimento elettrico, braccio, scostamento e ruote, densità delle pale, Monte Carlo,
+ambienti, motore.
+
+Un solo controllo resta come avviso (non ferma la run): il bias di un ambiente attivo che supera `disturbo_residuo_g`
+di `spinta.json`. Nel dimensionamento è il caso peggiore con cui si dimensiona la spinta; qui il bias è un disturbo
+realistico, quindi non si confronta per uguaglianza. L'impronta del caso contiene il nome del caso del dimensionamento
+e i valori importati: se il dimensionamento cambia, cambia l'impronta.
 
 
 ## Limiti da tenere a mente
@@ -427,11 +459,8 @@ del dimensionamento. Il controllo avvisa e non ferma la run.
   momento d'inerzia è un limite superiore. La variazione di densità è uniforme e indipendente fra le pale; nella
   realtà pale stampate nella stessa lavorazione si somigliano di più, quindi il range intero è un'ipotesi prudente.
 - Il momento massimo delle ruote è ancora un segnaposto.
-- Il controllo contro il dimensionamento (`confronto_dimensionamento.py`) confronta massa, distanza, tempo, spinta,
-potenza, giri e pale, e la pressione di progetto con la `p_amb` di `2_venturi/05_convergenza/design.json`. Il bias non
-si confronta per uguaglianza: nel dimensionamento `disturbo_residuo_g` è il caso peggiore con cui si dimensiona la
-spinta, qui il bias è un disturbo realistico; la run avvisa solo se il bias di un ambiente attivo lo supera.
-I dati `[DIM]` vanno ricopiati a ogni nuova run del dimensionamento: la dinamica non li legge da sola.
+- I dati `[DIM]` sono quelli del caso del dimensionamento al momento della run: se il caso cambia, la run successiva ne
+  tiene conto (l'impronta cambia), ma le cartelle già scritte restano com'erano.
 
 
 ## Fonti
