@@ -2,7 +2,9 @@
 
 I dati di progetto (massa, manovra, spinta, potenza, giri, pale, tempo di salita) non si scrivono in input.py: si
 leggono dal caso di ../Dimensionamento_Sistema_Propulsivo/risultati/<caso>/ che ha lo stesso nome di CASO["nome"]
-(la parte prima di "__": "RUN_6kg__prova1" usa il caso "RUN_6kg").  Fonti, per ogni caso:
+(il suffisso "__prova1" si toglie: "RUN_6kg__prova1" usa il caso "RUN_6kg").  CASO["nome"] può indicare anche una
+variante (Statore, NoStatore) o una serie di casi: trova_catene() lo traduce in una lista di catene, ognuna con la sua
+cartella (quella con 2_venturi, 3_ventola, 4_sistema).  Fonti, per ogni catena:
 
     1_spinta/spinta.json                       massa, distanza, tempo, n. ugelli, disturbo residuo
     2_venturi/05_convergenza/design.json       case.p_amb: pressione di progetto
@@ -16,17 +18,20 @@ leggono dal caso di ../Dimensionamento_Sistema_Propulsivo/risultati/<caso>/ che 
 Un dato mancante ferma la run con un errore che dice quale file e quale campo.
 """
 import csv
-import glob
+import dataclasses
+import difflib
 import json
 import math
 import os
 import types
+from typing import Optional
 
 import numpy as np
 
 from . import propulsore as DY
 
 SEP_VARIANTE = "__"
+VARIANTI = ("Statore", "NoStatore")      # sottocartelle del caso con il confronto statore
 RADICE_PREDEFINITA = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                                   "Dimensionamento_Sistema_Propulsivo", "risultati")
 
@@ -56,28 +61,288 @@ def nome_dimensionamento(nome):
     return str(nome).split(SEP_VARIANTE)[0]
 
 
+@dataclasses.dataclass
+class Catena:
+    """Una catena del dimensionamento (venturi -> ventola -> sistema) su cui gira la dinamica."""
+    etichetta: str                  # nome nelle uscite: "NoStatore", "massa_4", "massa_4/NoStatore" (/ = sottocartella)
+    cartella: str                   # cartella con 2_venturi, 3_ventola, 4_sistema
+    spinta_json: str                # 1_spinta/spinta.json della catena, se c'è, altrimenti quello della radice del caso
+    radice_caso: str                # cartella del caso (con 1_spinta, 5_confronto_statore, RIEPILOGO_masse.json)
+    variante: Optional[str] = None  # "Statore", "NoStatore" oppure None (layout senza confronto statore)
+
+
+class _NonTrovato(ValueError):
+    """Il nome non indica nulla nella radice (si riprova senza il suffisso __xxx)."""
+
+
+def _sottocartelle(d):
+    try:
+        return sorted(n for n in os.listdir(d) if os.path.isdir(os.path.join(d, n)) and n != "__pycache__")
+    except OSError:
+        return []
+
+
+def _varianti_di(d):
+    return [v for v in VARIANTI if os.path.isdir(os.path.join(d, v))]
+
+
+def _e_caso(d):
+    """Un caso del dimensionamento: ha 1_spinta/spinta.json oppure le cartelle Statore / NoStatore."""
+    return os.path.isfile(os.path.join(d, "1_spinta", "spinta.json")) or bool(_varianti_di(d))
+
+
+def _e_serie(d):
+    return not _e_caso(d) and any(_e_caso(os.path.join(d, n)) for n in _sottocartelle(d))
+
+
 def casi_disponibili(radice):
-    """Nomi dei casi del dimensionamento (cartelle con 1_spinta/spinta.json)."""
-    return sorted(os.path.basename(os.path.dirname(os.path.dirname(f)))
-                  for f in glob.glob(os.path.join(radice, "*", "1_spinta", "spinta.json")))
+    """Nomi validi per CASO["nome"]: casi, loro varianti, serie, etichette di serie e le loro varianti.
+
+    Le cartelle che iniziano con "_" (archivio) non sono elencate.
+    """
+    out = []
+    for n in _sottocartelle(radice):
+        d = os.path.join(radice, n)
+        if n.startswith("_"):
+            continue
+        if _e_caso(d):
+            out.append(n)
+            out += [f"{n}/{v}" for v in _varianti_di(d)]
+        elif _e_serie(d):
+            out.append(n)
+            for lab in _sottocartelle(d):
+                dl = os.path.join(d, lab)
+                if _e_caso(dl):
+                    out.append(f"{n}/{lab}")
+                    out += [f"{n}/{lab}/{v}" for v in _varianti_di(dl)]
+    return sorted(out)
 
 
-def cartella_caso(nome, radice=None):
-    """Cartella del caso del dimensionamento per CASO["nome"]; errore con l'elenco dei casi se manca."""
-    radice = radice or RADICE_PREDEFINITA
-    caso = nome_dimensionamento(nome)
-    if not os.path.isfile(os.path.join(radice, caso, "1_spinta", "spinta.json")):
+def _vicini(nome, elenco):
+    return difflib.get_close_matches(nome, list(elenco), n=3, cutoff=0.5)
+
+
+def _selezione_varianti(varianti):
+    """None = tutte; altrimenti la lista dei nomi richiesti (controllata)."""
+    if varianti is None or (isinstance(varianti, str) and varianti.strip().lower() == "tutte"):
+        return None
+    sel = [varianti] if isinstance(varianti, str) else list(varianti)
+    if not sel or any(not isinstance(v, str) for v in sel):
+        raise ValueError(f"CASO['varianti'] = {varianti!r}: ci vuole 'tutte' oppure un elenco di nomi, ad esempio "
+                         f"['NoStatore'] (nomi validi: {', '.join(VARIANTI)})")
+    ignote = [v for v in sel if v not in VARIANTI]
+    if ignote:
+        raise ValueError(f"CASO['varianti'] contiene {', '.join(map(repr, ignote))}: i nomi validi sono "
+                         f"{', '.join(VARIANTI)}")
+    return sel
+
+
+def _catene_di_caso(d, base, resto, sel, in_serie, tutte):
+    """Catene di un caso (cartella d). base = nome del caso o etichetta nella serie; resto = parti dopo il nome
+    (una variante o niente); tutte = True se il caso è preso in blocco da una serie (i casi senza le varianti
+    richieste si saltano)."""
+    nv = _varianti_di(d)
+    sp_caso = os.path.join(d, "1_spinta", "spinta.json")
+    nome_vis = f"serie/{base}" if in_serie else base
+
+    def catena(v):
+        et = (f"{base}/{v}" if in_serie else v) if v else base
+        cart = os.path.join(d, v) if v else d
+        sp = os.path.join(cart, "1_spinta", "spinta.json")
+        return Catena(et, cart, sp if os.path.isfile(sp) else sp_caso, d, v)
+
+    if resto:
+        v = resto[0]
+        if len(resto) > 1 or v not in nv:
+            if nv:
+                vic = _vicini(v, nv)
+                msg = f"le varianti sono {', '.join(nv)}" + (f" (forse {', '.join(vic)}?)" if vic else "")
+            else:
+                msg = "il caso non ha il confronto statore (niente Statore / NoStatore): il nome è solo il caso"
+            raise _NonTrovato(f"nel caso '{nome_vis}' non c'è '{'/'.join(resto)}': {msg}")
+        if sel is not None and v not in sel:
+            raise ValueError(f"CASO['nome'] indica la variante {v} ma CASO['varianti'] = {sel}: mettili d'accordo")
+        return [catena(v)]
+    if nv:
+        scelte = nv if sel is None else [v for v in nv if v in sel]
+        if not scelte:
+            if tutte:
+                return []
+            raise ValueError(f"CASO['varianti'] = {sel} ma il caso '{nome_vis}' ha solo {', '.join(nv)}")
+        return [catena(v) for v in scelte]
+    if sel is not None:
+        if tutte:
+            return []
+        raise ValueError(f"CASO['varianti'] = {sel} ma il caso '{nome_vis}' non ha il confronto statore (niente "
+                         "Statore / NoStatore): metti CASO['varianti'] = 'tutte'")
+    return [catena(None)]
+
+
+def _risolvi(radice, nome, sel):
+    parti = [p for p in nome.replace(chr(92), "/").split("/") if p]
+    if not parti:
+        raise _NonTrovato("nome vuoto")
+    d = os.path.join(radice, parti[0])
+    if not os.path.isdir(d):
         elenco = casi_disponibili(radice)
-        raise ValueError(f"nessun caso '{caso}' in {radice} (CASO['nome'] = {nome!r}; prima di '__' ci deve essere il "
-                         f"nome di un caso del dimensionamento). Casi disponibili: "
-                         + (", ".join(elenco) if elenco else "nessuno"))
-    return os.path.join(radice, caso)
+        v = _vicini(parti[0], [e for e in elenco if "/" not in e])
+        raise _NonTrovato(f"nessun caso né serie '{parti[0]}' in {radice} (CASO['nome'] = {nome!r}). Casi disponibili: "
+                          + (", ".join(elenco) if elenco else "nessuno") + (f". Forse: {', '.join(v)}?" if v else ""))
+    if _e_caso(d):
+        return _catene_di_caso(d, parti[0], parti[1:], sel, False, False)
+    if not _e_serie(d):
+        raise _NonTrovato(
+            f"'{parti[0]}' esiste in {radice} ma non è né un caso del dimensionamento (manca 1_spinta/spinta.json e "
+            f"le cartelle Statore / NoStatore) né una serie (nessuna sottocartella è un caso). Contiene: "
+            + (", ".join(_sottocartelle(d)) or "nulla") + ". Casi disponibili: "
+            + (", ".join(casi_disponibili(radice)) or "nessuno"))
+    casi = [n for n in _sottocartelle(d) if _e_caso(os.path.join(d, n))]
+    if parti[1:]:
+        lab = parti[1]
+        if lab not in casi:
+            v = _vicini(lab, casi)
+            raise _NonTrovato(f"nella serie '{parti[0]}' non c'è il caso '{lab}'. Etichette della serie: {', '.join(casi)}"
+                              + (f". Forse: {', '.join(v)}?" if v else ""))
+        return _catene_di_caso(os.path.join(d, lab), lab, parti[2:], sel, True, False)
+    catene = []
+    for lab in casi:
+        catene += _catene_di_caso(os.path.join(d, lab), lab, [], sel, True, True)
+    if not catene:
+        raise ValueError(f"la serie '{parti[0]}' ha i casi {', '.join(casi)} ma nessuno ha le varianti {sel} "
+                         "(CASO['varianti'])")
+    return catene
+
+
+def _candidati(nome):
+    """Il nome intero, poi senza l'ultimo suffisso "__xxx", e così via (le etichette di serie contengono "__")."""
+    out = [nome]
+    while SEP_VARIANTE in out[-1]:
+        out.append(out[-1].rsplit(SEP_VARIANTE, 1)[0])
+    return [c for c in out if c]
+
+
+def trova_catene(radice, nome, varianti="tutte"):
+    """Catene del dimensionamento indicate da CASO["nome"] e CASO["varianti"].
+
+    Formati di nome (sempre con l'eventuale suffisso __vN in fondo, che si toglie):
+        <caso>                       un caso: Statore e NoStatore se ci sono, altrimenti la catena unica
+        <caso>/<variante>            una variante (Statore o NoStatore)
+        <serie>                      tutti i casi della serie
+        <serie>/<etichetta>          un caso della serie
+        <serie>/<etichetta>/<variante>
+    varianti: "tutte" o un elenco (["NoStatore"]); nelle serie i casi senza la variante richiesta si saltano.
+    Ritorna list[Catena]; ValueError con cosa è stato trovato e i nomi validi.
+    """
+    radice = radice or RADICE_PREDEFINITA
+    if nome is None or not str(nome).strip():
+        raise ValueError("CASO['nome'] è obbligatorio: deve coincidere con un caso di "
+                         "Dimensionamento_Sistema_Propulsivo/risultati (da lì si importano i dati; "
+                         "un suffisso '__prova' dopo il nome è ammesso).")
+    sel = _selezione_varianti(varianti)
+    ultimo = None
+    for c in _candidati(str(nome).strip()):
+        try:
+            return _risolvi(radice, c, sel)
+        except _NonTrovato as e:
+            ultimo = e
+    raise ValueError(str(ultimo))
+
+
+def cartella_uscita(cart_caso, catena, piatto):
+    """Cartella delle uscite di una catena: il caso stesso se piatto, altrimenti le sottocartelle dell'etichetta."""
+    return cart_caso if piatto else os.path.join(cart_caso, *catena.etichetta.split("/"))
+
+
+# ---------------------------------------------------------------- coppia residua e dati informativi
+def _json_se_c_e(*parti):
+    f = os.path.join(*parti)
+    try:
+        with open(f, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def _flag_statore(catena, rep):
+    """True / False: la catena ha lo statore (dal nome della variante, dall'input della ventola o dal report)."""
+    if catena.variante:
+        return catena.variante == "Statore"
+    inp = _json_se_c_e(catena.radice_caso, "input_ventola.json")
+    try:
+        return bool(inp["stator"]["enabled"])
+    except (TypeError, KeyError):
+        pass
+    try:
+        return bool(rep["best"]["cases"][0]["stator_enabled"])
+    except (TypeError, KeyError, IndexError):
+        return None
+
+
+def coppia_residua(catena, rep, coppia_rotore, ru):
+    """Coppia netta sul veicolo di una coppia di rotori [N m] e la fonte; ritorna (valore, fonte, avvisi).
+
+    La coppia netta è quella vera del dimensionamento (nell'ordine: 5_confronto_statore del caso, net_torque_Nm del report.json
+    della catena, il confronto a rotore fisso di 4_sistema della catena); il valore usato è squilibrio_coppia x coppia netta.
+    Solo se nessuna c'è si ripiega su RUOTE.vortice_residuo_statore x coppia del rotore, con un avviso.
+    """
+    sq = ru["squilibrio_coppia"]
+    flag = _flag_statore(catena, rep)
+    R_C5 = "5_confronto_statore/confronto_statore.json"
+    c5 = _json_se_c_e(catena.radice_caso, "5_confronto_statore", "confronto_statore.json")
+    if c5 and catena.variante:
+        v = (c5.get("varianti") or {}).get(catena.variante) or {}
+        m = (v.get("ventola") or {}).get("coppia_netta_mNm") if v.get("presente", True) else None
+        if m is not None:
+            return (sq * abs(float(m)) / 1000.0,
+                    f"{R_C5} (caso): varianti.{catena.variante}.ventola.coppia_netta_mNm x RUOTE.squilibrio_coppia", [])
+    R_REP = "3_ventola/00_sintesi/report.json"
+    try:
+        net = rep["best"]["cases"][0]["net_torque_Nm"]
+    except (TypeError, KeyError, IndexError):
+        net = None
+    if net is not None:
+        return sq * abs(float(net)), f"{R_REP}: best.cases[0].net_torque_Nm x RUOTE.squilibrio_coppia", []
+    R_C4 = "4_sistema/00_sintesi/confronto_statore.json"
+    c4 = _json_se_c_e(catena.cartella, "4_sistema", "00_sintesi", "confronto_statore.json")
+    if c4:
+        righe = [r for r in (c4.get("varianti") or []) if "errore" not in r and r.get("coppia_netta_Nm") is not None]
+        scelte = [r for r in righe if bool(r.get("statore")) == (True if flag is None else flag)]
+        if scelte:
+            return (sq * abs(float(scelte[0]["coppia_netta_Nm"])),
+                    f"{R_C4}: varianti[statore={'true' if scelte[0].get('statore') else 'false'}].coppia_netta_Nm "
+                    "x RUOTE.squilibrio_coppia (confronto a rotore fisso)", [])
+    return (sq * ru["vortice_residuo_statore"] * coppia_rotore,
+            f"{R_REP}: best.cases[0].torque_Nm x RUOTE.squilibrio_coppia x RUOTE.vortice_residuo_statore (RIPIEGO)",
+            ["coppia residua dei rotori: nel dimensionamento non c'è la coppia netta (né 5_confronto_statore, né "
+             "net_torque_Nm nel report, né 4_sistema/00_sintesi/confronto_statore.json): uso il parametro "
+             "RUOTE['vortice_residuo_statore'], che è una stima"])
+
+
+def _info_catena(catena):
+    """Dati solo informativi: variante, L_disk finale della fascia, masse dei pezzi (None se mancano)."""
+    L_disk = None
+    fascia = _json_se_c_e(catena.cartella, "fascia.json")
+    if isinstance(fascia, list):
+        ok = [r for r in fascia if isinstance(r, dict) and "errore" not in r and r.get("L_disk_m") is not None]
+        if ok:
+            L_disk = float(ok[-1]["L_disk_m"])
+    masse = None
+    rm = _json_se_c_e(catena.radice_caso, "RIEPILOGO_masse.json")
+    cat = ((rm or {}).get("catene") or {}).get(catena.variante or "catena")
+    if isinstance(cat, dict):
+        masse = {k: (cat.get(k) or {}).get("massa_g") for k in ("tubo", "rotore", "statore", "totale")}
+    return {"etichetta": catena.etichetta, "variante": catena.variante, "L_disk_m": L_disk, "masse_g": masse}
+
+
+def _nome_cartella(cartella):
+    b = os.path.basename(os.path.normpath(cartella))
+    return f"{os.path.basename(os.path.dirname(os.path.normpath(cartella)))}/{b}" if b in VARIANTI else b
 
 
 def _file(cartella, rel):
     f = os.path.join(cartella, *rel.split("/"))
     if not os.path.isfile(f):
-        raise ValueError(f"dimensionamento: manca il file {rel} nel caso {os.path.basename(cartella)} "
+        raise ValueError(f"dimensionamento: manca il file {rel} nel caso {_nome_cartella(cartella)} "
                          "(il caso è incompleto, ad esempio la ventola non è ancora accettata)")
     return f
 
@@ -139,12 +404,18 @@ def _motore(cfg):
     return m
 
 
-def importa(cfg, cartella):
-    """Legge il caso del dimensionamento; ritorna (valori, fonti, avvisi).
+def importa(cfg, catena):
+    """Legge una catena del dimensionamento (Catena, o la cartella di un caso senza varianti); ritorna (valori, fonti, avvisi).
 
     valori e fonti sono dizionari {"SEZIONE.chiave": ...}: il valore da usare e il file/campo d'origine.
-    Servono cfg["MOTORE"], ENERGIA (tensione, rendimento), RUOTE (squilibrio, vortice residuo) e AMBIENTI.
+    valori["_J"] e valori["_info"] sono informativi (inerzie; etichetta, variante, L_disk_m, masse dei pezzi) e non
+    finiscono nelle sezioni.  Servono cfg["MOTORE"], ENERGIA (tensione, rendimento), RUOTE (squilibrio, vortice
+    residuo come ripiego) e AMBIENTI.
     """
+    if not isinstance(catena, Catena):
+        c = str(catena)
+        catena = Catena(os.path.basename(os.path.normpath(c)), c, os.path.join(c, "1_spinta", "spinta.json"), c, None)
+    cartella = catena.cartella
     v, f, avvisi = {}, {}, []
 
     def metti(sez, k, valore, fonte):
@@ -157,7 +428,11 @@ def importa(cfg, cartella):
     R_CAD, R_PALE = "3_ventola/03_cad/CAD_info.json", "3_ventola/00_sintesi/confronto_pale.json"
     R_DES, R_SEZ = "2_venturi/05_convergenza/design.json", "3_ventola/02_excel/sections.csv"
 
-    sp = _json(cartella, R_SP)
+    if not os.path.isfile(catena.spinta_json):
+        raise ValueError(f"dimensionamento: manca il file {R_SP} nel caso {_nome_cartella(catena.radice_caso)} "
+                         "(il caso è incompleto, ad esempio la ventola non è ancora accettata)")
+    with open(catena.spinta_json, encoding="utf-8") as fh:
+        sp = json.load(fh)
     massa = float(_campo(sp, R_SP, "input", "massa"))
     dist = float(_campo(sp, R_SP, "input", "distanza"))
     tempo = float(_campo(sp, R_SP, "input", "tempo"))
@@ -188,8 +463,9 @@ def importa(cfg, cartella):
     metti("PALE", "raggio_mozzo_mm", 500.0 * float(_campo(rep, R_VEN, "best", "design", "hub_diameter_m")),
           f"{R_VEN}: best.design.hub_diameter_m / 2")
     metti("PALE", "giri_progetto_rpm", rpm, f"{R_VEN}: best.cases[0].rpm")
-    metti("RUOTE", "coppia_reazione_rotori_Nm", ru["squilibrio_coppia"] * ru["vortice_residuo_statore"] * coppia,
-          f"{R_VEN}: best.cases[0].torque_Nm x RUOTE.squilibrio_coppia x RUOTE.vortice_residuo_statore")
+    c_res, fonte_c, av_c = coppia_residua(catena, rep, coppia, ru)
+    metti("RUOTE", "coppia_reazione_rotori_Nm", c_res, fonte_c)
+    avvisi += av_c
 
     cur = _json(cartella, R_CUR)
     righe = _campo(cur, R_CUR, "righe")
@@ -239,6 +515,7 @@ def importa(cfg, cartella):
           f"+ MOTORE.ritardo_regolatore_s; pale e coppia da {R_PALE} e {R_VEN}")
     v["_J"] = {"pale": J_pale, "mozzo": J_hub, "motore": float(mo["inerzia_rotore_kgm2"]), "totale": J_tot,
                "salita_s": t}
+    v["_info"] = {**_info_catena(catena), "fonte_coppia_residua": fonte_c}
 
     # unico controllo sui dati di input: il bias degli ambienti contro il disturbo con cui si è dimensionata la spinta
     dist_dim = sp["input"].get("disturbo_residuo_g")

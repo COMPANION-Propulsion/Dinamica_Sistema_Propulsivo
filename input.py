@@ -38,9 +38,10 @@ SEGNAPOSTO = valore da sostituire appena disponibile un dato vero.
 # DATI DAL DIMENSIONAMENTO (non si scrivono qui)
 # =============================================================================
 # CASO["nome"] sceglie il caso di ../Dimensionamento_Sistema_Propulsivo/risultati/<nome>/ da cui la run importa i
-# dati di progetto.  Si usa la parte del nome PRIMA di "__": "RUN_6kg" usa il caso "RUN_6kg"; "RUN_6kg__prova1" è
-# una variante della dinamica sullo stesso dimensionamento (altro input, altra cartella dei risultati).  Se il caso
-# non esiste, se il nome è None o se manca un file, la run si ferma con un errore.  Le grandezze importate non si
+# dati di progetto (anche una variante Statore / NoStatore o una serie di casi: vedi CASO più sotto).  Il suffisso
+# dopo "__" non conta: "RUN_6kg" usa il caso "RUN_6kg"; "RUN_6kg__prova1" è una variante della dinamica sullo stesso
+# dimensionamento (altro input, altra cartella dei risultati).  Se il caso non esiste, se il nome è None o se manca
+# un file, la run si ferma con un errore (una catena di una serie che fallisce non ferma le altre).  Le grandezze importate non si
 # scrivono in questo file né in AMBIENTI: se ci sono, la run si ferma ("viene dal dimensionamento").
 # Le grandezze, con il file di origine (tutti dentro il caso) e il campo:
 #   CORPO.massa_kg                                    1_spinta/spinta.json: input.massa
@@ -53,8 +54,10 @@ SEGNAPOSTO = valore da sostituire appena disponibile un dato vero.
 #   ENERGIA.potenza_rif_W                             3_ventola/00_sintesi/report.json: best.cases[0].shaft_power_W
 #                                                       x n_ugelli / ENERGIA.rendimento_elettrico
 #   ENERGIA.esponente                                 4_sistema/00_sintesi/curva_potenza.json: fit potenza / spinta
-#   RUOTE.coppia_reazione_rotori_Nm                   report.json: best.cases[0].torque_Nm x squilibrio_coppia
-#                                                       x vortice_residuo_statore (sezione RUOTE)
+#   RUOTE.coppia_reazione_rotori_Nm                   coppia netta vera sul veicolo (5_confronto_statore/confronto_statore.json,
+#                                                       report.json: net_torque_Nm, 4_sistema/00_sintesi/confronto_statore.json)
+#                                                       x squilibrio_coppia; solo se manca: report.json torque_Nm
+#                                                       x vortice_residuo_statore (sezione RUOTE) con un avviso
 #   PALE.numero_pale, raggio_mozzo_mm, giri_progetto_rpm   report.json: best.design, best.cases[0].rpm
 #   PALE.lunghezza_mm, spessore_mm                    3_ventola/03_cad/CAD_info.json (diametro, mozzo, volume pala)
 #   PALE.larghezza_mm                                 3_ventola/02_excel/sections.csv: corda media
@@ -69,9 +72,21 @@ SEGNAPOSTO = valore da sostituire appena disponibile un dato vero.
 # CASO   (cartella dei risultati: risultati/<nome>/; il nome sceglie anche il caso del dimensionamento)
 # =============================================================================
 CASO = {
-    "nome": "Run_20261112_fine_4kg",  # obbligatorio: prima di "__" il nome del caso del dimensionamento (vedi sopra)
+    "nome": "Run_20261112_fine_4kg",  # obbligatorio: il dimensionamento da importare, poi eventualmente "__prova" (vedi sotto)
+    "varianti": "tutte",           # "tutte" oppure un elenco, ad esempio ["NoStatore"]: quali varianti (Statore, NoStatore)
+                                   # simulare quando il dimensionamento ha il confronto statore; ignorato se non ce l'ha
     "sovrascrivi": False,          # True = riusa una cartella con nome anche se gli input erano diversi
 }
+# Formati di "nome" (relativi a ../Dimensionamento_Sistema_Propulsivo/risultati, con "/" tra i pezzi):
+#   "<caso>"                          un caso: Statore e NoStatore se il dimensionamento le ha, altrimenti la catena sola
+#   "<caso>/<variante>"               una variante sola, ad esempio "Run_X/NoStatore"
+#   "<serie>"                         tutti i casi di una serie del dimensionamento (valori con ";" nel suo input)
+#   "<serie>/<etichetta>"             un caso della serie, ad esempio "Serie_Y/massa_4"
+#   "<serie>/<etichetta>/<variante>"  una variante di un caso della serie
+# Il suffisso "__vN" (o "__prova") in fondo si toglie: è una variante della dinamica sullo stesso dimensionamento.
+# Con più catene (varianti o casi) ognuna ha la sua cartella in risultati/<nome>/<etichetta>/ e in risultati/<nome>/ c'è
+# il confronto fra le catene.  Con una sola catena senza varianti la struttura è quella di sempre.
+# "python run_dinamica.py --elenca" stampa le catene trovate e le cartelle di uscita senza simulare.
 
 # =============================================================================
 # 0. ESECUZIONE
@@ -164,10 +179,10 @@ RUOTE = {
     "scostamento_baricentro_mm": 5.0,    # [XLS] offset del baricentro dalla linea della spinta
     "braccio_coppia_m": 0.2104,          # braccio della spinta: 12 condotti sugli spigoli di un cubo da 340 mm
     "squilibrio_coppia": 0.05,           # squilibrio di spinta tra le due ventole di una coppia (5 %)
-    "vortice_residuo_statore": 0.05,     # [STIMA] quota della coppia del rotore che resta come vortice dopo lo statore (5 %): coppia di
-                                         # reazione dei rotori = squilibrio_coppia x questo x coppia del rotore [DIM] (lo statore a
-                                         # 7 pale annulla la coppia netta nel calcolo).  spinta_per_unita_N e coppia_reazione_rotori_Nm
-                                         # vengono dal dimensionamento
+    "vortice_residuo_statore": 0.05,     # [STIMA] RIPIEGO: serve solo se il dimensionamento non ha la coppia netta sul veicolo (la
+                                         # coppia di reazione dei rotori = squilibrio_coppia x coppia netta [DIM], che con lo statore è
+                                         # circa 0 e senza è la coppia del rotore).  Il ripiego usa questo x coppia del rotore e avvisa.
+                                         # spinta_per_unita_N e coppia_reazione_rotori_Nm vengono dal dimensionamento
     "momento_rotori_in_avvio_Nms": 0.0,  # [team] momento angolare dei rotori non compensati
     "momento_ruote_max_Nms": 0.15,       # [XLS] SEGNAPOSTO: momento angolare massimo delle ruote
     "frequenze_margine_fase_rad_s": [1.0, 2.0, 4.0],

@@ -36,6 +36,8 @@ Altri comandi utili:
 
 ```bash
 python run_dinamica.py --input altro_input.py   # usa un altro file di input
+python run_dinamica.py --elenca                 # stampa le catene del dimensionamento trovate e dove andranno le uscite, senza simulare
+python run_dinamica.py --radice-dimensionamento CARTELLA   # altra cartella dei risultati del dimensionamento
 python -m dinamica_designer.verifiche           # solo le verifiche, con il dettaglio di ognuna
 python -m pytest tests -q                       # i test automatici
 ```
@@ -57,7 +59,8 @@ Dinamica_Sistema_Propulsivo/
 │   ├── propulsore.py      salita della spinta, margine di fase, ruote di reazione
 │   ├── export.py          grafici, tabelle, RISULTATO.md
 │   ├── caso.py            nome e cartella del caso (una cartella per ambiente)
-│   ├── dimensionamento.py  import dei dati [DIM] dal caso del dimensionamento con lo stesso nome
+│   ├── dimensionamento.py  import dei dati [DIM]: trova le catene (varianti, serie) e le legge
+│   ├── confronto_catene.py confronto fra le catene (CONFRONTO_catene.md, .xlsx, .svg)
 │   └── verifiche.py       i controlli contro soluzioni analitiche
 ├── tests/                 test pytest
 └── risultati/             un caso per cartella (non va su git)
@@ -303,7 +306,7 @@ Due avvertenze. Il passo di integrazione deve essere piccolo rispetto al ritardo
 risultati/
 ├── registro_esecuzioni.csv        una riga per ogni run: data, caso, impronta, durata
 └── <caso>/                        per esempio RUN_POST_FIX_11-11
-    ├── caso.json                  nome, impronta, data, ambienti
+    ├── caso.json                  nome, impronta, data, ambienti, etichette delle catene
     ├── input_usato.py             copia esatta dell'input della run
     ├── dati_dimensionamento.json  valori importati dal dimensionamento, con file e campo d'origine
     ├── log.txt                    quello che la run ha scritto a schermo
@@ -325,7 +328,30 @@ risultati/
     └── ISS/                       stessa struttura
 ```
 
-Le verifiche analitiche, l'analisi delle pale e il margine di fase si eseguono una sola volta per run, non per ambiente.
+Questa è la struttura di un caso del dimensionamento senza confronto statore (una sola catena). Con più catene (le varianti
+`Statore` e `NoStatore`, o i casi di una serie) la stessa struttura si ripete per ogni catena in una sottocartella, e nella
+radice compaiono i confronti fra le catene:
+
+```
+risultati/<caso>/
+├── caso.json, input_usato.py, log.txt
+├── CONFRONTO_catene.md, confronto_catene.xlsx, confronto_catene.svg   catene affiancate (da confronto_catene.py)
+├── Statore/                       con "<caso>": una cartella per variante, ognuna come la struttura sopra
+│   ├── CONFRONTO.md, dati_dimensionamento.json, Pale/
+│   └── Volo_Parabolico/, ISS/     con 00_sintesi, 01_grafici, 02_dati
+├── NoStatore/                     stessa struttura
+└── massa_4/Statore/ ...           con "<serie>": <etichetta>/<variante>, oppure solo <etichetta> se il caso non ha varianti
+```
+
+Il nome della cartella del caso è `CASO["nome"]` con le "/" cambiate in "-" (`Serie_Y/massa_4` diventa `Serie_Y-massa_4`).
+Una catena che fallisce (importazione o simulazione) non ferma le altre: compare nel confronto con il suo stato e nel log.
+`dati_dimensionamento.json` di ogni catena, oltre a `caso`, `valori`, `fonti` e `avvisi`, ha `etichetta`, `variante`,
+`L_disk_m` (ultima passata di `fascia.json`), `masse_g` (tubo, rotore, statore, totale, da `RIEPILOGO_masse.json` del caso)
+e `fonte_coppia_residua`: le aggiunte sono informative, nel layout senza varianti sono `null`. L'impronta del caso
+comprende l'elenco delle catene: cambiare `CASO["varianti"]` cambia l'impronta.
+
+Le verifiche analitiche si eseguono una sola volta per run; l'analisi delle pale e il margine di fase una volta per catena,
+non per ambiente.
 `CONFRONTO.md` mette in colonna gli ambienti: pressione e sigma, spinta massima, disturbo, errore a fine manovra e
 massimo nel caso peggiore, spinta massima usata e quota della massima, tempo in saturazione, quota di manovre
 assestate nel Monte Carlo, potenza di picco totale, energia totale, corrente di picco, margine di fase, e, in fondo, i dati
@@ -394,17 +420,36 @@ La run importa i dati di progetto dal dimensionamento, senza copiarli a mano. Il
 
 1. si calcola un caso nel dimensionamento (`../Dimensionamento_Sistema_Propulsivo/risultati/<caso>/`, ad esempio
    `RUN_6kg`);
-2. in `input.py` si scrive lo stesso nome in `CASO["nome"]`: `"RUN_6kg"`. La parte del nome prima di `__` è il caso del
-   dimensionamento: `"RUN_6kg__prova1"` è una variante della dinamica (altri input, altra cartella di risultati) sullo
-   stesso dimensionamento `RUN_6kg`;
+2. in `input.py` si scrive lo stesso nome in `CASO["nome"]`: `"RUN_6kg"`. Il suffisso dopo `__` in fondo non conta:
+   `"RUN_6kg__prova1"` è una variante della dinamica (altri input, altra cartella di risultati) sullo stesso
+   dimensionamento `RUN_6kg`;
 3. `python run_dinamica.py` legge il caso (`dinamica_designer/dimensionamento.py`), riempie le sezioni con i valori
    importati e li scrive, con il file e il campo d'origine, nel log, in `risultati/<caso>/dati_dimensionamento.json` e
    in `CONFRONTO.md` (sezione "Dati dal dimensionamento").
 
-Regole, tutte con errore che ferma la run:
+**Cosa si può scrivere in `CASO["nome"]`** (relativo a `../Dimensionamento_Sistema_Propulsivo/risultati`):
 
-- `CASO["nome"]` è obbligatorio (niente nome automatico) e deve coincidere con un caso del dimensionamento: se manca,
-  l'errore elenca i casi disponibili;
+| nome | catene |
+|---|---|
+| `"RUN_6kg"` | un caso senza confronto statore: una catena, struttura di sempre |
+| `"Run_X"` (con `Statore/` e `NoStatore/`) | le due varianti |
+| `"Run_X/NoStatore"` | una variante sola |
+| `"Serie_Y"` | tutti i casi della serie (valori con `;` nell'input del dimensionamento) |
+| `"Serie_Y/massa_4"` | un caso della serie (le sue varianti, se ce ne sono) |
+| `"Serie_Y/massa_4/NoStatore"` | una variante di un caso della serie |
+
+Il suffisso `__vN` si può aggiungere a ognuno (`"Serie_Y/massa_4__v2"`). `CASO["varianti"]` sceglie le varianti: `"tutte"`
+(predefinito) oppure un elenco, ad esempio `["NoStatore"]`; nelle serie i casi senza la variante richiesta si saltano, e
+un caso senza varianti con `["NoStatore"]` è un errore. `python run_dinamica.py --elenca` mostra le catene trovate e la
+cartella di uscita di ognuna senza simulare. Le catene si riconoscono dalle cartelle: un caso ha `1_spinta/spinta.json`
+oppure `Statore/` e `NoStatore/`; una serie contiene casi. La spinta è quella della catena (`<variante>/1_spinta`) se c'è,
+altrimenti quella della radice del caso.
+
+Regole, tutte con errore che ferma la run (con più catene, una catena non importabile viene saltata e la run si ferma
+solo se nessuna lo è):
+
+- `CASO["nome"]` è obbligatorio (niente nome automatico) e deve indicare un caso, una variante o una serie del
+  dimensionamento: se manca, l'errore dice cosa ha trovato, elenca i nomi validi e propone quelli vicini;
 - se manca un file o un campo (ad esempio la ventola non è ancora accettata) l'errore dice quale file e quale campo;
 - una grandezza importata scritta in `input.py` o nelle sovrascritture di `AMBIENTI` è un errore ("viene dal
   dimensionamento: toglila da input.py"), così non ci sono doppioni.
@@ -419,7 +464,7 @@ Cosa si importa, dal caso `<caso>` (il blocco "DATI DAL DIMENSIONAMENTO" in cima
 | `RUOTE["spinta_per_unita_N"]` | `condotto_con_ventola.json`: `spinta_con_ventola_N` |
 | `ENERGIA["potenza_rif_W"]` | `3_ventola/00_sintesi/report.json`: `best.cases[0].shaft_power_W` x ugelli / `rendimento_elettrico` |
 | `ENERGIA["esponente"]` | fit log-log potenza / spinta di `4_sistema/00_sintesi/curva_potenza.json` (righe calcolate, da 0,1 N alla spinta di progetto per ugello) |
-| `RUOTE["coppia_reazione_rotori_Nm"]` | `report.json` `torque_Nm` x `squilibrio_coppia` x `vortice_residuo_statore` (le due chiavi sono in `RUOTE`) |
+| `RUOTE["coppia_reazione_rotori_Nm"]` | coppia netta sul veicolo x `squilibrio_coppia`; la coppia netta è il dato vero, nell'ordine: `5_confronto_statore/confronto_statore.json` del caso (`varianti.<variante>.ventola.coppia_netta_mNm`), `report.json` della catena `best.cases[0].net_torque_Nm` (il rotore vero, riprogettato per la variante), `4_sistema/00_sintesi/confronto_statore.json` della catena (confronto a rotore fisso: riga con `statore` come la variante; senza varianti, come `stator.enabled` di `input_ventola.json`, altrimenti la riga con statore). Solo se nessuno c'è: ripiego `report.json` `torque_Nm` x `vortice_residuo_statore`, con un avviso. Con lo statore la coppia netta è circa 0 |
 | `PALE`: `numero_pale`, `raggio_mozzo_mm`, `giri_progetto_rpm` | `report.json`: `best.design`, `best.cases[0].rpm` |
 | `PALE`: `lunghezza_mm`, `spessore_mm` | `3_ventola/03_cad/CAD_info.json` (diametro, mozzo, volume della pala) |
 | `PALE["larghezza_mm"]` | media delle corde di `3_ventola/02_excel/sections.csv` |
@@ -437,6 +482,9 @@ Spinta, potenza e giri importati valgono a 101 325 Pa. La scala all'ambiente (si
 riscalano a mano. Restano in `input.py` solo i dati propri della dinamica: esecuzione, finestra, tolleranza, profilo,
 disturbo, regolatore, tensione e rendimento elettrico, braccio, scostamento e ruote, densità delle pale, Monte Carlo,
 ambienti, motore.
+
+Dalla catena si leggono anche, solo per i report (non entrano nei calcoli): la variante, `L_disk_m` dall'ultima riga di
+`fascia.json` e le masse dei pezzi da `RIEPILOGO_masse.json` del caso.
 
 Un solo controllo resta come avviso (non ferma la run): il bias di un ambiente attivo che supera `disturbo_residuo_g`
 di `spinta.json`. Nel dimensionamento è il caso peggiore con cui si dimensiona la spinta; qui il bias è un disturbo

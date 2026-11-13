@@ -1,6 +1,7 @@
 """Import dei dati dal dimensionamento: valori, nome con suffisso, errori, avviso sul bias."""
 import copy
 import os
+import re
 import shutil
 import sys
 
@@ -18,7 +19,8 @@ DIM = os.path.join(os.path.dirname(__file__), "dati", "Dimensionamento_Sistema_P
 def _input(tmp_path, nome="esempio", aggiunte=""):
     """Copia di input.py con CASO["nome"] cambiato e, se serve, righe in più in fondo (es. una chiave doppia)."""
     testo = open(os.path.join(RADICE, "input.py"), encoding="utf-8").read()
-    testo = testo.replace('"nome": "RUN_POST_FIX_11-11__v2"', f'"nome": {nome!r}', 1)
+    testo, n = re.subn(r'("nome":\s*)[^,#\n]+,', lambda m: f"{m.group(1)}{nome!r},", testo, count=1)     # qualunque sia il nome attuale
+    assert n == 1
     p = tmp_path / "input_prova.py"
     p.write_text(testo + aggiunte, encoding="utf-8")
     return str(p)
@@ -31,7 +33,10 @@ def _carica(tmp_path, **kw):
 def test_valori_importati(tmp_path):
     cfg = _carica(tmp_path)
     d = cfg["DIMENSIONAMENTO"]
-    assert d["caso"] == "esempio" and d["avvisi"] == []
+    assert d["caso"] == "esempio"
+    # il caso "esempio" non ha la coppia netta: ripiego su vortice_residuo_statore, con avviso
+    assert len(d["avvisi"]) == 1 and "vortice_residuo_statore" in d["avvisi"][0] and "RIPIEGO" in d["fonti"]["RUOTE.coppia_reazione_rotori_Nm"]
+    assert d["variante"] is None and d["valori"]["_info"]["L_disk_m"] is None and d["valori"]["_info"]["masse_g"] is None
     assert cfg["CORPO"]["massa_kg"] == 4.5
     assert cfg["MANOVRA"]["distanza_m"] == [0.2] * 3 and cfg["MANOVRA"]["tempo_manovra_s"] == 5
     at, en, ru, pa = cfg["ATTUATORE"], cfg["ENERGIA"], cfg["RUOTE"], cfg["PALE"]
@@ -68,6 +73,8 @@ def test_suffisso_della_variante(tmp_path):
     b = _carica(tmp_path, nome="esempio")
     assert a["DIMENSIONAMENTO"]["valori"] == b["DIMENSIONAMENTO"]["valori"]
     assert cli.impronta(a) == cli.impronta(b)
+    c = _carica(tmp_path, nome="esempio__v2")
+    assert c["DIMENSIONAMENTO"]["valori"] == b["DIMENSIONAMENTO"]["valori"]
 
 
 def test_caso_mancante_elenca_i_disponibili(tmp_path):
@@ -113,7 +120,7 @@ def test_bias_sopra_il_residuo_avvisa(tmp_path):
 
 
 def test_bias_sotto_il_residuo_non_avvisa(tmp_path):
-    assert _carica(tmp_path)["DIMENSIONAMENTO"]["avvisi"] == []
+    assert not [a for a in _carica(tmp_path)["DIMENSIONAMENTO"]["avvisi"] if "bias_g" in a]
 
 
 def test_impronta_cambia_se_cambia_un_valore_importato(tmp_path):

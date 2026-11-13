@@ -1,11 +1,16 @@
 """Riga di comando della dinamica di volo: input.py -> risultati/<caso>/.
 
-Sequenza: lettura e controllo dell'input, verifiche contro soluzioni analitiche (una volta), analisi delle
-pale (una volta), margine di fase (una volta); poi, per ogni ambiente attivo di AMBIENTI, simulazione dei tre
-assi, Monte Carlo, potenza totale, spazio massimo e tempo minimo, ruote (propulsore.py) e file di uscita in
-risultati/<caso>/<ambiente>/; infine CONFRONTO.md.
+Sequenza: lettura e controllo dell'input, verifiche contro soluzioni analitiche (una volta); poi, per ogni catena
+del dimensionamento indicata da CASO["nome"] / CASO["varianti"] (una sola nel caso senza confronto statore; Statore e
+NoStatore; i casi di una serie): analisi delle pale, margine di fase e, per ogni ambiente attivo di AMBIENTI,
+simulazione dei tre assi, Monte Carlo, potenza totale, spazio massimo e tempo minimo, ruote (propulsore.py) e file di
+uscita in risultati/<caso>/[<catena>/]<ambiente>/; infine CONFRONTO.md di ogni catena e, con più catene,
+CONFRONTO_catene.* (confronto_catene.py).
+
+    python run_dinamica.py --elenca     stampa le catene trovate e le cartelle di uscita, senza simulare
 """
 import argparse
+import copy
 import datetime as dt
 import hashlib
 import importlib.util
@@ -43,13 +48,8 @@ STAT_POTENZA = ("potenza_picco_W", "energia_J", "potenza_media_W", "corrente_pic
 
 
 # ---------------------------------------------------------------- input
-def carica_input(percorso, radice_dimensionamento=None):
-    """Dizionari dell'input (SEZIONI) più CASO, con i dati del dimensionamento importati e controllati.
-
-    I dati di progetto (massa, manovra, spinta, potenza, pale, t90) si leggono dal caso del dimensionamento che ha il
-    nome di CASO["nome"] (parte prima di "__"), cercato in radice_dimensionamento (predefinita:
-    ../Dimensionamento_Sistema_Propulsivo/risultati).  Il risultato è in cfg["DIMENSIONAMENTO"].
-    """
+def leggi_input(percorso):
+    """Dizionari dell'input (SEZIONI), CASO e AMBIENTI, senza i dati del dimensionamento; controlla le chiavi doppie."""
     spec = importlib.util.spec_from_file_location("input_dinamica", percorso)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -66,12 +66,44 @@ def carica_input(percorso, radice_dimensionamento=None):
                    ("RUOTE", "squilibrio_coppia"), ("RUOTE", "vortice_residuo_statore")):
         if k not in cfg[sez]:
             raise ValueError(f"manca {sez}['{k}'] in input.py (serve per i dati importati dal dimensionamento)")
-    cartella = DM.cartella_caso(cfg["CASO"].get("nome"), radice_dimensionamento)       # errore se il caso non c'è
-    valori, fonti, avvisi = DM.importa(cfg, cartella)
+    return cfg
+
+
+def trova_catene(cfg, radice_dimensionamento=None):
+    """Catene del dimensionamento di CASO["nome"] / CASO["varianti"] (vedi dimensionamento.trova_catene)."""
+    return DM.trova_catene(radice_dimensionamento, cfg["CASO"].get("nome"), cfg["CASO"].get("varianti", "tutte"))
+
+
+def cfg_catena(base, catena):
+    """Copia dell'input con i dati di una catena importati e controllati; cfg["DIMENSIONAMENTO"] li descrive."""
+    cfg = copy.deepcopy(base)
+    valori, fonti, avvisi = DM.importa(cfg, catena)
     DM.applica(cfg, valori)
-    cfg["DIMENSIONAMENTO"] = {"caso": os.path.basename(cartella), "valori": valori, "fonti": fonti, "avvisi": avvisi}
+    cfg["DIMENSIONAMENTO"] = {"caso": os.path.basename(os.path.normpath(catena.radice_caso)), "etichetta": catena.etichetta,
+                              "variante": catena.variante, "valori": valori, "fonti": fonti, "avvisi": avvisi}
     _controlla(cfg)
     return cfg
+
+
+def dati_dimensionamento(dim):
+    """Dati importati da una catena, come si scrivono in dati_dimensionamento.json (e si passano al confronto)."""
+    info = dim["valori"].get("_info") or {}
+    return {"caso": dim["caso"], "etichetta": dim["etichetta"], "variante": dim["variante"],
+            "L_disk_m": info.get("L_disk_m"), "masse_g": info.get("masse_g"),
+            "fonte_coppia_residua": info.get("fonte_coppia_residua"),
+            "valori": dim["valori"], "fonti": dim["fonti"], "avvisi": dim["avvisi"]}
+
+
+def carica_input(percorso, radice_dimensionamento=None):
+    """Dizionari dell'input (SEZIONI) più CASO, con i dati della prima catena del dimensionamento importati e controllati.
+
+    I dati di progetto (massa, manovra, spinta, potenza, pale, t90) si leggono dalle catene del dimensionamento indicate
+    da CASO["nome"] (senza il suffisso "__xxx") e CASO["varianti"], cercate in radice_dimensionamento (predefinita:
+    ../Dimensionamento_Sistema_Propulsivo/risultati).  Il risultato della prima catena è in cfg["DIMENSIONAMENTO"]; la
+    run importa ogni catena con cfg_catena().
+    """
+    base = leggi_input(percorso)
+    return cfg_catena(base, trova_catene(base, radice_dimensionamento)[0])
 
 
 def ambienti_attivi(cfg):
@@ -133,6 +165,10 @@ def _controlla(c):
     unknown = sorted(set(c["CASO"]) - set(CA.CASO_PREDEFINITO))
     if unknown:
         err.append(f"chiavi sconosciute in CASO: {', '.join(unknown)}")
+    try:
+        DM._selezione_varianti(c["CASO"].get("varianti", "tutte"))
+    except ValueError as e:
+        err.append(str(e))
     if err:
         raise ValueError("Errori in input:" + chr(10) + " - " + (chr(10) + " - ").join(err))
 
@@ -195,6 +231,14 @@ def impronta(cfg):
                         if a.get("attivo", True)}
     dati["ESECUZIONE"] = {k: v for k, v in cfg["ESECUZIONE"].items() if k not in SOLO_FORMA}
     return hashlib.sha1(json.dumps(dati, sort_keys=True, default=str).encode()).hexdigest()[:8]
+
+
+def impronta_run(imps, piatto):
+    """Impronta della run: quella della catena unica (struttura piatta), altrimenti un hash delle impronte di tutte le
+    catene con le loro etichette (imps: {etichetta: impronta o None se l'importazione è fallita})."""
+    if piatto:
+        return next(iter(imps.values()))
+    return hashlib.sha1(json.dumps(imps, sort_keys=True).encode()).hexdigest()[:8]
 
 
 def nome_automatico(cfg, imp):
@@ -431,44 +475,17 @@ def esegui_ambiente(cfg, cart, nome_caso, imp, data, pm, anello, log):
 
 
 # ---------------------------------------------------------------- run
-def run(input_file=INPUT_FILE, nome_run="dinamica", radice_dimensionamento=None):
-    """Esegue la run; ritorna la cartella del caso (None se le verifiche falliscono)."""
-    for f in (sys.stdout, sys.stderr):
-        try:
-            f.reconfigure(encoding="utf-8")
-        except (AttributeError, ValueError):
-            pass
-    t0 = time.time()
-    cfg = carica_input(input_file, radice_dimensionamento)
+def esegui_catena(cfg, cart, nome, imp, data, log):
+    """Una catena del dimensionamento: pale, margine di fase e tutti gli ambienti attivi in cart (già preparata)."""
     es = cfg["ESECUZIONE"]
-    if es.get("verifiche", True):
-        from . import verifiche as VF
-        ok, tot = VF.esegui(stampa=lambda *a, **k: None)
-        print(f"Verifiche della dinamica: {ok}/{tot} superate")
-        if ok < tot:
-            print("Una verifica è fallita: la simulazione non parte.")
-            return None
-    imp = impronta(cfg)
     attivi = ambienti_attivi(cfg)
-    base = os.path.join(ROOT, es.get("cartella_output", "risultati"))
-    os.makedirs(base, exist_ok=True)
-    nome = CA.nome_caso(cfg["CASO"], nome_automatico(cfg, imp))
-    cart = CA.prepara(base, nome, imp, cfg["CASO"]["sovrascrivi"], input_file, attivi)     # una volta sola
-    flog = open(os.path.join(cart, "log.txt"), "w", encoding="utf-8")
-
-    def log(msg=""):
-        print(msg)
-        flog.write(msg + "\n")
-        flog.flush()
-
     m, at, rg = cfg["CORPO"]["massa_kg"], cfg["ATTUATORE"], cfg["REGOLATORE"]
-    data = f"{dt.datetime.now():%d/%m/%Y %H:%M}"
-    log(f"Esecuzione {nome_run} (input: {os.path.basename(input_file)}): {cart}")
     log(f"Massa {m:.2f} kg nel baricentro; ambienti attivi: {', '.join(attivi)}")
     log(f"{EX.descrivi_regolatore(rg)}; attuatore t90 = {at['tempo_salita_90_s']} s; "
         f"dati di progetto alla pressione {at['pressione_progetto_Pa']:g} Pa")
     dim = cfg["DIMENSIONAMENTO"]
-    log(f"\nDATI DAL DIMENSIONAMENTO (caso {dim['caso']}):")
+    var = f", variante {dim['variante']}" if dim["variante"] else ""
+    log(f"\nDATI DAL DIMENSIONAMENTO (caso {dim['caso']}{var}):")
     for k, x in dim["valori"].items():
         if not k.startswith("_"):
             log(f"  {k:<36}{EX.formatta_valore(x):<30}{dim['fonti'][k]}")
@@ -477,11 +494,11 @@ def run(input_file=INPUT_FILE, nome_run="dinamica", radice_dimensionamento=None)
         f"{J['totale']:.3g} kg·m²; salita al 90 % dei giri in {J['salita_s']:.3f} s")
     for a in dim["avvisi"]:
         log(f"  ATTENZIONE: {a}")
+    os.makedirs(cart, exist_ok=True)
     with open(os.path.join(cart, "dati_dimensionamento.json"), "w", encoding="utf-8") as fh:
-        json.dump({"caso": dim["caso"], "valori": dim["valori"], "fonti": dim["fonti"], "avvisi": dim["avvisi"]},
-                  fh, indent=1, ensure_ascii=False)
+        json.dump(dati_dimensionamento(dim), fh, indent=1, ensure_ascii=False)
 
-    # calcoli che non dipendono dall'ambiente: una volta sola
+    # calcoli che non dipendono dall'ambiente: una volta sola per catena
     pale = PA.analizza(cfg["PALE"], m, max(max(at["spinta_max_positiva_N"]), max(at["spinta_max_negativa_N"])))
     pm, anello = margine_fase(cfg)
     pa, pg, pmc = cfg["PALE"], pale["caso_peggiore"], pale["monte_carlo"]
@@ -505,31 +522,147 @@ def run(input_file=INPUT_FILE, nome_run="dinamica", radice_dimensionamento=None)
             "ritardo dell'attuatore troppo alto per questa banda")
     log("  per confronto, regolatore PD di riferimento con zero a wc/3 (non è l'anello simulato): "
         + ", ".join(f"{p:.0f}° a {wc:g} rad/s" for wc, p in pm.items()))
-    scritti_pale = [EX.scrivi_pale(pale, cfg, os.path.join(cart, "Pale"), es["formato_grafici"])]
+    scritti_pale = [EX.scrivi_pale(pale, cfg, os.path.join(cart, "Pale"), cfg["ESECUZIONE"]["formato_grafici"])]
 
     riepiloghi, cfgs = {}, {}
     for nome_amb in attivi:
         cfgs[nome_amb] = cfg_ambiente(cfg, nome_amb)
         riepiloghi[nome_amb] = esegui_ambiente(cfgs[nome_amb], os.path.join(cart, nome_amb), nome, imp, data, pm, anello, log)
 
-    confronto = EX.scrivi_confronto(riepiloghi, cfgs, nome, data, dim,
-                                    os.path.join(cart, "CONFRONTO.md"))
+    confronto = EX.scrivi_confronto(riepiloghi, cfgs, nome, data, dim, os.path.join(cart, "CONFRONTO.md"))
     log("")
     for p in scritti_pale + [confronto]:
         log(f"  scritto: {os.path.relpath(p, cart)}".replace(os.sep, "/"))
+    return riepiloghi
+
+
+def pianifica(cfg, catene, radice_dimensionamento=None):
+    """Dove vanno le uscite: ritorna (cartella dei risultati, nome del caso, struttura piatta, [(catena, cartella di uscita)])."""
+    base = os.path.join(ROOT, cfg["ESECUZIONE"].get("cartella_output", "risultati"))
+    nome = CA.nome_caso(cfg["CASO"], "")
+    piatto = len(catene) == 1 and catene[0].variante is None
+    cart = os.path.join(base, nome)
+    return base, nome, piatto, [(c, DM.cartella_uscita(cart, c, piatto)) for c in catene]
+
+
+def elenca(cfg, catene, radice_dimensionamento=None):
+    """Stampa le catene trovate e la cartella di uscita di ognuna (non simula)."""
+    base, nome, piatto, piano = pianifica(cfg, catene, radice_dimensionamento)
+    radice = radice_dimensionamento or DM.RADICE_PREDEFINITA
+    print(f"CASO['nome'] = {cfg['CASO'].get('nome')!r}, CASO['varianti'] = {cfg['CASO'].get('varianti', 'tutte')!r}")
+    print(f"Radice del dimensionamento: {os.path.abspath(radice)}")
+    print(f"Catene trovate: {len(piano)}; risultati in {os.path.join(base, nome)}"
+          + (" (struttura piatta: un solo caso senza varianti)" if piatto else " (una sottocartella per catena)"))
+    for i, (c, out) in enumerate(piano, 1):
+        print(f"  {i}. {c.etichetta}" + (f"   [variante {c.variante}]" if c.variante else "   [senza varianti]"))
+        print(f"       dimensionamento: {os.path.abspath(c.cartella)}")
+        print(f"       spinta:          {os.path.abspath(c.spinta_json)}")
+        print(f"       uscita:          {os.path.abspath(out)}")
+    return piano
+
+
+def run(input_file=INPUT_FILE, nome_run="dinamica", radice_dimensionamento=None, solo_elenco=False):
+    """Esegue la run; ritorna la cartella del caso (None se le verifiche falliscono)."""
+    for f in (sys.stdout, sys.stderr):
+        try:
+            f.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
+    t0 = time.time()
+    base_cfg = leggi_input(input_file)
+    catene = trova_catene(base_cfg, radice_dimensionamento)           # errore se il nome non indica nulla
+    if solo_elenco:
+        elenca(base_cfg, catene, radice_dimensionamento)
+        return os.path.join(*pianifica(base_cfg, catene)[:2])
+    cfgs, falliti = {}, {}
+    for c in catene:
+        try:
+            cfgs[c.etichetta] = cfg_catena(base_cfg, c)
+        except ValueError as e:
+            if len(catene) == 1:
+                raise
+            falliti[c.etichetta] = str(e)
+    if not cfgs:
+        raise ValueError("nessuna catena importabile:" + chr(10) + " - " + (chr(10) + " - ").join(
+            f"{k}: {v}" for k, v in falliti.items()))
+    es = base_cfg["ESECUZIONE"]
+    if es.get("verifiche", True):
+        from . import verifiche as VF
+        ok, tot = VF.esegui(stampa=lambda *a, **k: None)
+        print(f"Verifiche della dinamica: {ok}/{tot} superate")
+        if ok < tot:
+            print("Una verifica è fallita: la simulazione non parte.")
+            return None
+    base, nome, piatto, piano = pianifica(base_cfg, catene, radice_dimensionamento)
+    imp = impronta_run({c.etichetta: (impronta(cfgs[c.etichetta]) if c.etichetta in cfgs else None) for c in catene}, piatto)
+    attivi = ambienti_attivi(base_cfg)
+    os.makedirs(base, exist_ok=True)
+    cart = CA.prepara(base, nome, imp, base_cfg["CASO"]["sovrascrivi"], input_file, attivi,
+                      [] if piatto else [c.etichetta for c in catene],
+                      [c.etichetta for c in catene if c.etichetta in cfgs])        # una volta sola
+    flog = open(os.path.join(cart, "log.txt"), "w", encoding="utf-8")
+
+    def log(msg=""):
+        print(msg)
+        flog.write(msg + "\n")
+        flog.flush()
+
+    data = f"{dt.datetime.now():%d/%m/%Y %H:%M}"
+    log(f"Esecuzione {nome_run} (input: {os.path.basename(input_file)}): {cart}")
+    if not piatto:
+        log(f"{len(catene)} catene del dimensionamento: " + ", ".join(c.etichetta for c in catene))
+    elenco_catene = []
+    for c, out in piano:
+        nome_c = nome if piatto else f"{nome}/{c.etichetta}"
+        if c.etichetta in falliti:
+            stato, dati = f"importazione fallita: {falliti[c.etichetta]}", None
+            log(f"\n{'#' * 100}\nCATENA {c.etichetta}: {stato}")
+        else:
+            cfg = cfgs[c.etichetta]
+            dati = dati_dimensionamento(cfg["DIMENSIONAMENTO"])
+            if not piatto:
+                log(f"\n{'#' * 100}\nCATENA {c.etichetta} ({c.cartella})")
+            try:
+                esegui_catena(cfg, out, nome_c, imp, data, log)
+                stato = "ok"
+            except Exception as e:                      # una catena che fallisce non ferma le altre
+                if len(catene) == 1:
+                    flog.close()
+                    raise
+                stato = f"{type(e).__name__}: {e}"
+                log(f"  ERRORE nella catena {c.etichetta}: {stato}")
+        elenco_catene.append({"etichetta": c.etichetta, "cartella_out": out, "stato": stato,
+                              "variante": c.variante, "dati": dati})
+    if len(catene) > 1:
+        try:
+            from .confronto_catene import scrivi_confronto_catene
+            for p in scrivi_confronto_catene(cart, elenco_catene):
+                log(f"  scritto: {os.path.relpath(p, cart)}".replace(os.sep, "/"))
+        except Exception as e:                          # ImportError compreso
+            log(f"  ATTENZIONE: confronto tra le catene non scritto ({type(e).__name__}: {e})")
     CA.registra(base, {"data": data, "caso": nome, "impronta": imp, "run": nome_run,
                        "durata_s": round(time.time() - t0)})
     log(f"\nFinito in {time.time() - t0:.0f} s. Risultati in {cart}")
+    for x in elenco_catene:
+        if x["stato"] != "ok":
+            log(f"  catena {x['etichetta']}: {x['stato']}")
     flog.close()
+    if not any(x["stato"] == "ok" for x in elenco_catene):
+        raise ValueError("nessuna catena è stata simulata: vedi log.txt")
     return cart
 
 
 def main(argv=None, descrizione=__doc__):
     ap = argparse.ArgumentParser(description=descrizione, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--input", default=INPUT_FILE, help="file di input (predefinito: input.py)")
+    ap.add_argument("--elenca", action="store_true",
+                    help="stampa le catene del dimensionamento trovate e la cartella di uscita di ognuna, senza simulare")
+    ap.add_argument("--radice-dimensionamento", default=None, metavar="CARTELLA",
+                    help="cartella dei risultati del dimensionamento "
+                         "(predefinita: ../Dimensionamento_Sistema_Propulsivo/risultati)")
     args = ap.parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        cart = run(args.input)
+        cart = run(args.input, radice_dimensionamento=args.radice_dimensionamento, solo_elenco=args.elenca)
     except ValueError as e:
         print(f"Errore: {e}")
         return 1
