@@ -72,7 +72,7 @@ SEGNAPOSTO = valore da sostituire appena disponibile un dato vero.
 # CASO   (cartella dei risultati: risultati/<nome>/; il nome sceglie anche il caso del dimensionamento)
 # =============================================================================
 CASO = {
-    "nome": "Run_20261112_fine_4kg",  # obbligatorio: il dimensionamento da importare, poi eventualmente "__prova" (vedi sotto)
+    "nome": "Run_20261114_fine_Ottimizzato",  # obbligatorio: il dimensionamento da importare, poi eventualmente "__prova" (vedi sotto)
     "varianti": "tutte",           # "tutte" oppure un elenco, ad esempio ["NoStatore"]: quali varianti (Statore, NoStatore)
                                    # simulare quando il dimensionamento ha il confronto statore; ignorato se non ce l'ha
     "sovrascrivi": False,          # True = riusa una cartella con nome anche se gli input erano diversi
